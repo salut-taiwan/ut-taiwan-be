@@ -1,4 +1,5 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
+const env = require('../config/env');
 
 async function register(req, res) {
   const { email, password, name, nim, phone } = req.body;
@@ -6,7 +7,11 @@ async function register(req, res) {
     return res.status(400).json({ error: 'email, password, dan name wajib diisi' });
   }
 
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: `${env.FRONTEND_URL}/login?verified=true` },
+  });
   if (error) return res.status(400).json({ error: error.message });
 
   // Supabase returns null user when email already exists (enumeration prevention)
