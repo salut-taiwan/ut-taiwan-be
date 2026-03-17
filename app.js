@@ -13,6 +13,26 @@ const app = express();
 
 // Security
 app.use(helmet());
+const allowedOrigins = new Set(
+  [env.FRONTEND_URL]
+    .filter(Boolean)
+    .flatMap(u => {
+      // Accept both www and non-www variants of the configured URL
+      try {
+        const url = new URL(u);
+        const variants = [url.origin];
+        if (url.hostname.startsWith('www.')) {
+          variants.push(`${url.protocol}//${url.hostname.slice(4)}${url.port ? ':' + url.port : ''}`);
+        } else {
+          variants.push(`${url.protocol}//www.${url.hostname}${url.port ? ':' + url.port : ''}`);
+        }
+        return variants;
+      } catch {
+        return [u];
+      }
+    })
+);
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, server-to-server)
@@ -21,9 +41,9 @@ app.use(cors({
     if (env.NODE_ENV === 'development' && /^http:\/\/localhost(:\d+)?$/.test(origin)) {
       return callback(null, true);
     }
-    // In production, only allow the configured frontend URL
-    if (origin === env.FRONTEND_URL) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
+    // In production, only allow the configured frontend URL (www + non-www)
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    callback(null, false);
   },
   credentials: true,
 }));
