@@ -11,6 +11,9 @@ const env = require('./config/env');
 
 const app = express();
 
+// Trust the first proxy (Railway, Vercel, etc.) so rate-limit can read the real client IP
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet());
 const allowedOrigins = new Set(
