@@ -3,6 +3,22 @@ const env = require('../config/env');
 
 const TBO_BASE = env.TBO_BASE_URL;
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function withRetry(fn, { retries = 3, baseDelay = 1000, maxDelay = 15000 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      const exp = Math.min(baseDelay * 2 ** attempt, maxDelay);
+      const jitter = exp * (0.8 + Math.random() * 0.4);
+      console.warn(`[TBO] Attempt ${attempt + 1} failed (${err.message}). Retrying in ${Math.round(jitter)}ms...`);
+      await sleep(jitter);
+    }
+  }
+}
+
 /**
  * Scrape all module listings from TBO Karunika public pages.
  * Returns an array of module objects (no login required).
@@ -18,14 +34,21 @@ async function runTboScraper() {
     const programs = await scrapeAllPrograms(page);
     console.log(`[TBO] Found ${programs.length} programs to scrape`);
 
+    let consecutiveFails = 0;
+
     for (const program of programs) {
       console.log(`[TBO] Scraping program: ${program.code}`);
       try {
-        const programModules = await scrapeProgramModules(page, program.url);
+        const programModules = await withRetry(() => scrapeProgramModules(page, program.url));
         modules.push(...programModules);
+        consecutiveFails = 0;
       } catch (err) {
-        console.warn(`[TBO] Error scraping program ${program.code}:`, err.message);
+        console.warn(`[TBO] Failed program ${program.code}:`, err.message);
+        consecutiveFails++;
       }
+
+      const pause = Math.min(600 + consecutiveFails * 200, 3000);
+      await sleep(pause);
     }
   } finally {
     await browser.close();
@@ -41,7 +64,7 @@ async function runTboScraper() {
 }
 
 async function scrapeAllPrograms(page) {
-  await page.goto(`${TBO_BASE}/book_list`, { timeout: 30000, waitUntil: 'domcontentloaded' });
+  await page.goto(`${TBO_BASE}/book_list`, { timeout: 60000, waitUntil: 'domcontentloaded' });
   await page.waitForSelector('div.panel-body', { timeout: 15000, state: 'attached' });
 
   const programs = await page.$$eval('div.panel-body ul li a', els =>
@@ -55,7 +78,7 @@ async function scrapeAllPrograms(page) {
 }
 
 async function scrapeProgramModules(page, url) {
-  await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
+  await page.goto(url, { timeout: 60000, waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.panel.panel-default, .no-result', { timeout: 15000 }).catch(() => {});
 
   const noResult = await page.$('.no-result');
