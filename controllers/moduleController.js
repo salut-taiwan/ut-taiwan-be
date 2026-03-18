@@ -54,4 +54,42 @@ async function getModule(req, res) {
   res.json(data);
 }
 
-module.exports = { listModules, searchModules, getModule };
+async function createModule(req, res) {
+  const {
+    tbo_code, name, price_student, price_general,
+    edition, author, publisher, weight_grams,
+    cover_image_url, is_available, has_multimedia, tbo_url,
+  } = req.body;
+
+  if (!tbo_code || !name || price_student == null || price_general == null) {
+    return res.status(400).json({ error: 'tbo_code, name, price_student, dan price_general wajib diisi' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('modules')
+    .insert({
+      tbo_code: String(tbo_code).toUpperCase().trim(),
+      name,
+      price_student,
+      price_general,
+      edition: edition || null,
+      author: author || null,
+      publisher: publisher || 'Universitas Terbuka',
+      weight_grams: weight_grams || null,
+      cover_image_url: cover_image_url || null,
+      is_available: is_available !== undefined ? is_available : true,
+      has_multimedia: has_multimedia !== undefined ? has_multimedia : false,
+      tbo_url: tbo_url || null,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Kode TBO sudah terdaftar' });
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.status(201).json(data);
+}
+
+module.exports = { listModules, searchModules, getModule, createModule };

@@ -52,4 +52,61 @@ async function getPackage(req, res) {
   res.json(data);
 }
 
-module.exports = { listPackages, getPackage };
+async function syncPackages(req, res) {
+  // Rebuild package_modules from live DB: packages → programs → subjects → subject_modules → modules
+  const { data: packages, error: pkgErr } = await supabaseAdmin
+    .from('packages')
+    .select('id, program_id, semester');
+  if (pkgErr) return res.status(500).json({ error: pkgErr.message });
+
+  if (!packages || packages.length === 0) {
+    return res.json({ linked: 0, packages: 0 });
+  }
+
+  // Delete all existing package_modules
+  const { error: delErr } = await supabaseAdmin
+    .from('package_modules')
+    .delete()
+    .neq('package_id', '00000000-0000-0000-0000-000000000000'); // delete all rows
+  if (delErr) return res.status(500).json({ error: delErr.message });
+
+  let totalLinked = 0;
+
+  for (const pkg of packages) {
+    // Get subjects for this program + semester
+    const { data: subjects, error: subjErr } = await supabaseAdmin
+      .from('subjects')
+      .select('id, code')
+      .eq('program_id', pkg.program_id)
+      .eq('semester_hint', pkg.semester);
+    if (subjErr || !subjects || subjects.length === 0) continue;
+
+    const subjectIds = subjects.map(s => s.id);
+
+    // Get subject_modules for these subjects
+    const { data: smLinks, error: smErr } = await supabaseAdmin
+      .from('subject_modules')
+      .select('module_id, subject_id')
+      .in('subject_id', subjectIds);
+    if (smErr || !smLinks || smLinks.length === 0) continue;
+
+    // Deduplicate module_ids
+    const uniqueModuleIds = [...new Set(smLinks.map(sm => sm.module_id))];
+
+    const rows = uniqueModuleIds.map((moduleId, idx) => ({
+      package_id: pkg.id,
+      module_id: moduleId,
+      sort_order: idx + 1,
+    }));
+
+    const { error: insErr } = await supabaseAdmin
+      .from('package_modules')
+      .insert(rows);
+
+    if (!insErr) totalLinked += rows.length;
+  }
+
+  res.json({ linked: totalLinked, packages: packages.length });
+}
+
+module.exports = { listPackages, getPackage, syncPackages };

@@ -394,6 +394,7 @@ INSERT INTO packages (program_id, name, description, semester, is_active) SELECT
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 5 — ' || p.name,  'Paket bahan ajar semester 5 Program Studi ' || p.name,  5, true FROM programs p WHERE p.code = '57' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 6 — ' || p.name,  'Paket bahan ajar semester 6 Program Studi ' || p.name,  6, true FROM programs p WHERE p.code = '57' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 7 — ' || p.name,  'Paket bahan ajar semester 7 Program Studi ' || p.name,  7, true FROM programs p WHERE p.code = '57' ON CONFLICT (program_id, semester) DO NOTHING;
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 8 — ' || p.name,  'Paket bahan ajar semester 8 Program Studi ' || p.name,  8, true FROM programs p WHERE p.code = '57' ON CONFLICT (program_id, semester) DO NOTHING;
 
 -- Package modules: program 57 semester 1
 INSERT INTO package_modules (package_id, module_id, sort_order)
@@ -477,6 +478,18 @@ JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
 JOIN subject_modules sm ON sm.subject_id = s.id
 JOIN modules m ON m.id = sm.module_id
 WHERE p.code = '57' AND pk.semester = 7
+ON CONFLICT (package_id, module_id) DO NOTHING;
+
+-- Package modules: program 57 semester 8
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '57' AND pk.semester = 8
 ON CONFLICT (package_id, module_id) DO NOTHING;
 
 -- Packages for program 58 ────────────────────────────────
@@ -772,8 +785,47 @@ WHERE p.code = '60' AND pk.semester = 6
 ON CONFLICT (package_id, module_id) DO NOTHING;
 
 -- Packages for program 61 ────────────────────────────────
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 1 — ' || p.name,  'Paket bahan ajar semester 1 Program Studi ' || p.name,  1, true FROM programs p WHERE p.code = '61' ON CONFLICT (program_id, semester) DO NOTHING;
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 2 — ' || p.name,  'Paket bahan ajar semester 2 Program Studi ' || p.name,  2, true FROM programs p WHERE p.code = '61' ON CONFLICT (program_id, semester) DO NOTHING;
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 3 — ' || p.name,  'Paket bahan ajar semester 3 Program Studi ' || p.name,  3, true FROM programs p WHERE p.code = '61' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 5 — ' || p.name,  'Paket bahan ajar semester 5 Program Studi ' || p.name,  5, true FROM programs p WHERE p.code = '61' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 6 — ' || p.name,  'Paket bahan ajar semester 6 Program Studi ' || p.name,  6, true FROM programs p WHERE p.code = '61' ON CONFLICT (program_id, semester) DO NOTHING;
+
+-- Package modules: program 61 semester 1
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '61' AND pk.semester = 1
+ON CONFLICT (package_id, module_id) DO NOTHING;
+
+-- Package modules: program 61 semester 2
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '61' AND pk.semester = 2
+ON CONFLICT (package_id, module_id) DO NOTHING;
+
+-- Package modules: program 61 semester 3
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '61' AND pk.semester = 3
+ON CONFLICT (package_id, module_id) DO NOTHING;
 
 -- Package modules: program 61 semester 5
 INSERT INTO package_modules (package_id, module_id, sort_order)
@@ -2474,11 +2526,37 @@ WHERE p.code = '79' AND pk.semester = 8
 ON CONFLICT (package_id, module_id) DO NOTHING;
 
 -- Packages for program 80 ────────────────────────────────
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 1 — ' || p.name,  'Paket bahan ajar semester 1 Program Studi ' || p.name,  1, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
+INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 2 — ' || p.name,  'Paket bahan ajar semester 2 Program Studi ' || p.name,  2, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 3 — ' || p.name,  'Paket bahan ajar semester 3 Program Studi ' || p.name,  3, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 4 — ' || p.name,  'Paket bahan ajar semester 4 Program Studi ' || p.name,  4, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 5 — ' || p.name,  'Paket bahan ajar semester 5 Program Studi ' || p.name,  5, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 6 — ' || p.name,  'Paket bahan ajar semester 6 Program Studi ' || p.name,  6, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
 INSERT INTO packages (program_id, name, description, semester, is_active) SELECT p.id,  'Paket Semester 7 — ' || p.name,  'Paket bahan ajar semester 7 Program Studi ' || p.name,  7, true FROM programs p WHERE p.code = '80' ON CONFLICT (program_id, semester) DO NOTHING;
+
+-- Package modules: program 80 semester 1
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '80' AND pk.semester = 1
+ON CONFLICT (package_id, module_id) DO NOTHING;
+
+-- Package modules: program 80 semester 2
+INSERT INTO package_modules (package_id, module_id, sort_order)
+SELECT pk.id, m.id,
+  ROW_NUMBER() OVER (PARTITION BY pk.id ORDER BY s.code)::int
+FROM packages pk
+JOIN programs p ON pk.program_id = p.id
+JOIN subjects s ON s.program_id = p.id AND s.semester_hint = pk.semester
+JOIN subject_modules sm ON sm.subject_id = s.id
+JOIN modules m ON m.id = sm.module_id
+WHERE p.code = '80' AND pk.semester = 2
+ON CONFLICT (package_id, module_id) DO NOTHING;
 
 -- Package modules: program 80 semester 3
 INSERT INTO package_modules (package_id, module_id, sort_order)

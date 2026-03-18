@@ -165,23 +165,66 @@ function parsePlainRow(line) {
   const m = line.match(
     /^\s*(\d+\s+)?([A-Z]{2,8}\d{4}[A-Z]?)\s+(.+?)\s+(\d{1,2})\s+([IVX0-9]{1,4}\.\d+|99|0\.\d+)\s+([A-Z]{2,8}\d{4}[A-Z]?)\s+/
   );
-  if (!m) return null;
 
-  const code = m[2];
+  if (m) {
+    const code = m[2];
+    if (!RE_COURSE_CODE.test(code)) return null;
+
+    const name = m[3];
+    const sks = parseInt(m[4], 10);
+    if (isNaN(sks) || sks <= 0 || sks > 24) return null;
+
+    const examPeriod = m[5];
+    const firstModCode = m[6];
+
+    const restOfLine = line.slice(m.index + m[0].length);
+    const moduleCodes = [firstModCode];
+
+    const additionalCodes = restOfLine.matchAll(/\b([A-Z]{2,8}\d{4}[A-Z]?)\b/g);
+    for (const match of additionalCodes) {
+      const c = match[1];
+      if (RE_MODULE_CODE.test(c) && !moduleCodes.includes(c)) {
+        moduleCodes.push(c);
+      }
+    }
+
+    const rowNoStr = m[1] ? m[1].trim() : null;
+    const rowNo = rowNoStr ? parseInt(rowNoStr, 10) : null;
+
+    return {
+      code,
+      name,
+      sks,
+      examPeriod,
+      moduleCodes,
+      semColIndex: null,
+      isRequired: rowNo !== null,
+      rowNo,
+      isPipe: false,
+    };
+  }
+
+  // Fallback: no-SKS format (catalog 02 PGSD/PGPAUD/PAI plain-text)
+  // Pattern: [N] CODE NAME EXAM MODCODE ...
+  const m2 = line.match(
+    /^\s*(\d+\s+)?([A-Z]{2,8}\d{4}[A-Z]?)\s+(.+?)\s+([IVX0-9]{1,4}\.\d+|99|0\.\d+)\s+([A-Z]{2,8}\d{4}[A-Z]?)\s+/
+  );
+  if (!m2) return null;
+
+  const code = m2[2];
   if (!RE_COURSE_CODE.test(code)) return null;
 
-  const name = m[3];
-  const sks = parseInt(m[4], 10);
-  if (isNaN(sks) || sks <= 0 || sks > 24) return null;
+  const name = m2[3];
+  const examPeriod = m2[4];
+  const firstModCode = m2[5];
 
-  const examPeriod = m[5];
-  const firstModCode = m[6];
+  // Try to extract SKS from trailing number before Ket (e.g. "... Kepramukaan 3 BP")
+  const sksMatch = line.match(/\s+(\d{1,2})\s+[A-Z]{1,5}[\s,]*$/);
+  const sks = sksMatch ? parseInt(sksMatch[1], 10) : 3;
 
-  // Find additional module codes in the rest of the line
-  const restOfLine = line.slice(m.index + m[0].length);
+  const restOfLine = line.slice(m2.index + m2[0].length);
   const moduleCodes = [firstModCode];
 
-  // Look for additional module codes (e.g., ESPA4321 at end of multi-module lines)
   const additionalCodes = restOfLine.matchAll(/\b([A-Z]{2,8}\d{4}[A-Z]?)\b/g);
   for (const match of additionalCodes) {
     const c = match[1];
@@ -190,7 +233,7 @@ function parsePlainRow(line) {
     }
   }
 
-  const rowNoStr = m[1] ? m[1].trim() : null;
+  const rowNoStr = m2[1] ? m2[1].trim() : null;
   const rowNo = rowNoStr ? parseInt(rowNoStr, 10) : null;
 
   return {
@@ -199,7 +242,7 @@ function parsePlainRow(line) {
     sks,
     examPeriod,
     moduleCodes,
-    semColIndex: null, // plain-text: determined by accumulation
+    semColIndex: null,
     isRequired: rowNo !== null,
     rowNo,
     isPipe: false,

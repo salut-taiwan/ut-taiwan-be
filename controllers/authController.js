@@ -106,4 +106,18 @@ async function updateMe(req, res) {
   res.json(data);
 }
 
-module.exports = { register, login, logout, getMe, updateMe };
+async function refresh(req, res) {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
+
+  const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+  if (error || !data.session) return res.status(401).json({ error: 'Sesi berakhir. Silakan login kembali.' });
+
+  res.json({
+    token: data.session.access_token,
+    refreshToken: data.session.refresh_token,
+    expiresAt: data.session.expires_at,
+  });
+}
+
+module.exports = { register, login, logout, getMe, updateMe, refresh };

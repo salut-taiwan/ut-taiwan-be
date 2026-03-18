@@ -172,4 +172,39 @@ async function listAllOrders(req, res) {
   res.json(data);
 }
 
-module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders };
+const VALID_TRANSITIONS = {
+  paid: ['processing', 'shipped'],
+  processing: ['shipped'],
+  shipped: ['delivered'],
+};
+
+async function updateOrderStatus(req, res) {
+  const { orderId } = req.params;
+  const { status } = req.body;
+
+  if (!status) return res.status(400).json({ error: 'status wajib diisi' });
+
+  const { data: order, error: fetchError } = await supabaseAdmin
+    .from('orders')
+    .select('id, status')
+    .eq('id', orderId)
+    .single();
+
+  if (fetchError || !order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+  const allowed = VALID_TRANSITIONS[order.status] || [];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: `Tidak dapat mengubah status dari "${order.status}" ke "${status}"` });
+  }
+
+  const { error } = await supabaseAdmin
+    .from('orders')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', orderId);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ message: 'Status pesanan berhasil diperbarui', status });
+}
+
+module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus };
