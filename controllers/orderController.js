@@ -197,9 +197,11 @@ async function updateOrderStatus(req, res) {
     return res.status(400).json({ error: `Tidak dapat mengubah status dari "${order.status}" ke "${status}"` });
   }
 
+  const extra = status === 'shipped' ? { shipped_at: new Date().toISOString() } : {};
+
   const { error } = await supabaseAdmin
     .from('orders')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, updated_at: new Date().toISOString(), ...extra })
     .eq('id', orderId);
 
   if (error) return res.status(500).json({ error: error.message });
@@ -207,4 +209,27 @@ async function updateOrderStatus(req, res) {
   res.json({ message: 'Status pesanan berhasil diperbarui', status });
 }
 
-module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus };
+async function confirmDelivery(req, res) {
+  const { id } = req.params;
+
+  const { data: order, error: fetchError } = await supabaseAdmin
+    .from('orders')
+    .select('id, status')
+    .eq('id', id)
+    .eq('user_id', req.user.id)
+    .single();
+
+  if (fetchError || !order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+  if (order.status !== 'shipped') return res.status(400).json({ error: 'Pesanan belum dalam status dikirim' });
+
+  const { error } = await supabaseAdmin
+    .from('orders')
+    .update({ status: 'delivered', updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json({ message: 'Penerimaan dikonfirmasi' });
+}
+
+module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmDelivery };

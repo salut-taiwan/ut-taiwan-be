@@ -507,7 +507,7 @@ function generateSubjectSQL(allPrograms) {
           ` SELECT s.id, m.id` +
           ` FROM subjects s` +
           ` JOIN programs p ON s.program_id = p.id` +
-          ` JOIN modules m ON m.tbo_code = ${esc(modCode)}` +
+          ` JOIN modules m ON REGEXP_REPLACE(m.tbo_code, '-\\\\d+$', '') = ${esc(modCode)}` +
           ` WHERE p.code = ${esc(dbCode)} AND s.code = ${esc(s.code)}` +
           ` ON CONFLICT (subject_id, module_id) DO NOTHING;`
         );
