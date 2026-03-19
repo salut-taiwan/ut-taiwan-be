@@ -6,9 +6,9 @@ async function getOrCreateCart(userId) {
   return { id: cartId };
 }
 
-async function getCart(req, res) {
-  const cart = await getOrCreateCart(req.user.id);
-  if (!cart) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+async function buildCartDTO(userId) {
+  const cart = await getOrCreateCart(userId);
+  if (!cart) return null;
 
   const { data, error } = await supabaseAdmin
     .from('cart_items')
@@ -18,7 +18,7 @@ async function getCart(req, res) {
     `)
     .eq('cart_id', cart.id);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return null;
 
   const items = data.map(item => ({
     id: item.id,
@@ -32,13 +32,19 @@ async function getCart(req, res) {
     isAvailable: item.modules.is_available,
   }));
 
-  res.json({
+  return {
     id: cart.id,
-    userId: req.user.id,
+    userId,
     items,
     subtotal: items.reduce((sum, i) => sum + i.subtotal, 0),
     itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-  });
+  };
+}
+
+async function getCart(req, res) {
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.json(dto);
 }
 
 async function addItem(req, res) {
@@ -58,20 +64,20 @@ async function addItem(req, res) {
 
   const cart = await getOrCreateCart(req.user.id);
 
-  // Upsert cart item
-  const { data, error } = await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('cart_items')
     .upsert({
       cart_id: cart.id,
       module_id: moduleId,
       quantity,
       price_snapshot: mod.price_student,
-    }, { onConflict: 'cart_id,module_id' })
-    .select()
-    .single();
+    }, { onConflict: 'cart_id,module_id' });
 
   if (error) return res.status(400).json({ error: error.message });
-  res.status(201).json(data);
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.status(201).json(dto);
 }
 
 async function addPackage(req, res) {
@@ -106,7 +112,10 @@ async function addPackage(req, res) {
     .upsert(cartItems, { onConflict: 'cart_id,module_id' });
 
   if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: `${cartItems.length} modul ditambahkan ke keranjang` });
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.json(dto);
 }
 
 async function updateItem(req, res) {
@@ -124,11 +133,14 @@ async function updateItem(req, res) {
     .update({ quantity })
     .eq('id', itemId)
     .eq('cart_id', cart.id)
-    .select()
+    .select('id')
     .single();
 
   if (error || !data) return res.status(404).json({ error: 'Item tidak ditemukan' });
-  res.json(data);
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.json(dto);
 }
 
 async function removeItem(req, res) {
@@ -142,7 +154,10 @@ async function removeItem(req, res) {
     .eq('cart_id', cart.id);
 
   if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: 'Item dihapus dari keranjang' });
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.json(dto);
 }
 
 async function clearCart(req, res) {

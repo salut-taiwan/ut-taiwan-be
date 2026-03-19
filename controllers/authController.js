@@ -1,17 +1,42 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
 const env = require('../config/env');
 
+function buildProfileInsert(userId, body) {
+  const {
+    email, name, nim, phone, birth_place, birth_date, program_id,
+    address_zh_city, address_zh_district, address_zh_road, address_zh_number, address_zh_floor,
+    postal_code,
+    bank_ntd_code, bank_ntd_name, bank_ntd_account, bank_idr_name, bank_idr_account,
+  } = body;
+  return {
+    id: userId, email, name, nim, phone,
+    birth_place: birth_place || null,
+    birth_date: birth_date || null,
+    program_id,
+    address_zh_city, address_zh_district, address_zh_road, address_zh_number,
+    address_zh_floor: address_zh_floor || null,
+    postal_code: postal_code || null,
+    bank_ntd_code: bank_ntd_code || null,
+    bank_ntd_name: bank_ntd_name || null,
+    bank_ntd_account: bank_ntd_account || null,
+    bank_idr_name: bank_idr_name || null,
+    bank_idr_account: bank_idr_account || null,
+  };
+}
+
 async function register(req, res) {
   const { email, password, name, nim, phone, birth_place, birth_date,
           program_id,
           address_zh_city, address_zh_district, address_zh_road, address_zh_number, address_zh_floor,
+          postal_code,
           bank_ntd_code, bank_ntd_name, bank_ntd_account,
           bank_idr_name, bank_idr_account } = req.body;
 
   if (!email || !password || !name || !nim || !phone || !birth_place || !birth_date
       || !program_id
-      || !address_zh_city || !address_zh_district || !address_zh_road || !address_zh_number) {
-    return res.status(400).json({ error: 'email, password, nama, NIM, nomor HP, tempat/tanggal lahir, program studi, dan alamat Mandarin wajib diisi' });
+      || !address_zh_city || !address_zh_district || !address_zh_road || !address_zh_number
+      || !postal_code) {
+    return res.status(400).json({ error: 'email, password, nama, NIM, nomor HP, tempat/tanggal lahir, program studi, alamat Mandarin, dan kode pos wajib diisi' });
   }
 
   const ntdComplete = bank_ntd_code && bank_ntd_account;
@@ -40,41 +65,13 @@ async function register(req, res) {
       return res.status(409).json({ error: 'Email sudah terdaftar, silakan login.' });
     }
     // Orphaned auth user — insert the missing public profile
-    await supabaseAdmin.from('users').insert({
-      id: signInData.user.id, email, name, nim, phone,
-      birth_place: birth_place || null,
-      birth_date: birth_date || null,
-      program_id,
-      address_zh_city, address_zh_district, address_zh_road, address_zh_number,
-      address_zh_floor: address_zh_floor || null,
-      bank_ntd_code: bank_ntd_code || null,
-      bank_ntd_name: bank_ntd_name || null,
-      bank_ntd_account: bank_ntd_account || null,
-      bank_idr_name: bank_idr_name || null,
-      bank_idr_account: bank_idr_account || null,
-    });
+    await supabaseAdmin.from('users').insert(buildProfileInsert(signInData.user.id, req.body));
     await supabase.auth.signOut();
     return res.status(201).json({ message: 'Akun berhasil dipulihkan. Silakan login.' });
   }
 
   // Create user profile row
-  const { error: profileError } = await supabaseAdmin.from('users').insert({
-    id: data.user.id,
-    email,
-    name,
-    nim,
-    phone,
-    birth_place: birth_place || null,
-    birth_date: birth_date || null,
-    program_id,
-    address_zh_city, address_zh_district, address_zh_road, address_zh_number,
-    address_zh_floor: address_zh_floor || null,
-    bank_ntd_code: bank_ntd_code || null,
-    bank_ntd_name: bank_ntd_name || null,
-    bank_ntd_account: bank_ntd_account || null,
-    bank_idr_name: bank_idr_name || null,
-    bank_idr_account: bank_idr_account || null,
-  });
+  const { error: profileError } = await supabaseAdmin.from('users').insert(buildProfileInsert(data.user.id, req.body));
 
   if (profileError) {
     // Compensate: delete the auth user to avoid orphaned auth account

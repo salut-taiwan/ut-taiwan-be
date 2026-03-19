@@ -1,39 +1,12 @@
 const { supabaseAdmin } = require('../config/supabase');
-const emailService = require('../services/emailService');
+const orderEmailService = require('../services/orderEmailService');
 
 async function confirmPayment(req, res) {
   const { orderId } = req.params;
   const { error } = await supabaseAdmin.rpc('confirm_payment', { p_order_id: orderId });
   if (error) return res.status(400).json({ error: error.message });
 
-  // Send payment confirmed email
-  try {
-    const { data: order } = await supabaseAdmin
-      .from('orders')
-      .select('order_number, total_amount, user_id, order_items(module_code, module_name, quantity, unit_price, subtotal)')
-      .eq('id', orderId)
-      .single();
-
-    if (order) {
-      const { data: userRow } = await supabaseAdmin
-        .from('users')
-        .select('email, name')
-        .eq('id', order.user_id)
-        .single();
-
-      if (userRow) {
-        await emailService.sendPaymentConfirmed({
-          email: userRow.email,
-          name: userRow.name,
-          orderNumber: order.order_number,
-          totalAmount: order.total_amount,
-          items: order.order_items,
-        });
-      }
-    }
-  } catch (emailErr) {
-    console.error('[Email] Failed to send payment confirmed email:', emailErr.message);
-  }
+  await orderEmailService.sendStatusEmail(orderId, 'paid');
 
   res.json({ message: 'Pembayaran dikonfirmasi' });
 }

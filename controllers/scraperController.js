@@ -1,35 +1,46 @@
 const { supabaseAdmin } = require('../config/supabase');
 const scraperService = require('../services/scraperService');
 
-let isRunning = false;
+async function isScraperRunning() {
+  const { data } = await supabaseAdmin
+    .from('scraper_runs')
+    .select('id')
+    .eq('status', 'running')
+    .limit(1)
+    .maybeSingle();
+  return !!data;
+}
 
-async function triggerRun(req, res) {
-  if (isRunning) {
+async function _trigger(res, triggeredBy, serviceFn) {
+  if (await isScraperRunning()) {
     return res.status(409).json({ error: 'Scraper sudah berjalan' });
   }
 
-  // Create run record
   const { data: run } = await supabaseAdmin
     .from('scraper_runs')
-    .insert({ triggered_by: 'manual', status: 'running' })
+    .insert({ triggered_by: triggeredBy, status: 'running' })
     .select()
     .single();
 
   if (!run) return res.status(500).json({ error: 'Gagal membuat log scraper' });
 
-  // Respond immediately, run scraper in background
   res.status(202).json({ message: 'Scraper dimulai', runId: run.id });
 
-  isRunning = true;
-  scraperService.runScraper(run.id).finally(() => {
-    isRunning = false;
-  });
+  serviceFn(run.id);
+}
+
+async function triggerRun(req, res) {
+  return _trigger(res, 'manual', scraperService.runScraper);
+}
+
+async function triggerPrefixRun(req, res) {
+  return _trigger(res, 'prefix-manual', scraperService.runPrefixScraperService);
 }
 
 async function listRuns(req, res) {
   const { data, error } = await supabaseAdmin
     .from('scraper_runs')
-    .select('id, started_at, finished_at, status, modules_added, modules_updated, modules_removed, triggered_by')
+    .select('id, started_at, finished_at, status, modules_added, modules_updated, modules_removed, triggered_by, error_message')
     .order('started_at', { ascending: false })
     .limit(50);
 
@@ -54,27 +65,6 @@ async function getRun(req, res) {
     .order('changed_at', { ascending: false });
 
   res.json({ run, changes: changes || [] });
-}
-
-async function triggerPrefixRun(req, res) {
-  if (isRunning) {
-    return res.status(409).json({ error: 'Scraper sudah berjalan' });
-  }
-
-  const { data: run } = await supabaseAdmin
-    .from('scraper_runs')
-    .insert({ triggered_by: 'prefix-manual', status: 'running' })
-    .select()
-    .single();
-
-  if (!run) return res.status(500).json({ error: 'Gagal membuat log scraper' });
-
-  res.status(202).json({ message: 'Scraper prefix dimulai', runId: run.id });
-
-  isRunning = true;
-  scraperService.runPrefixScraperService(run.id).finally(() => {
-    isRunning = false;
-  });
 }
 
 module.exports = { triggerRun, triggerPrefixRun, listRuns, getRun };

@@ -21,9 +21,15 @@ const env = {
 };
 
 const required = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+const recommended = ['RESEND_API_KEY'];
 for (const key of required) {
   if (!env[key]) {
     console.warn(`Warning: Missing environment variable ${key}`);
+  }
+}
+for (const key of recommended) {
+  if (!env[key]) {
+    console.warn(`Warning: Missing env var ${key} — emails will be skipped`);
   }
 }
 

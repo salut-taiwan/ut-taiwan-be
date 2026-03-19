@@ -1,6 +1,8 @@
 const { supabaseAdmin } = require('../config/supabase');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
+const orderEmailService = require('../services/orderEmailService');
+const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS } = require('../config/constants');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -72,7 +74,7 @@ async function checkout(req, res) {
       gatewayPaymentId: null,
       gatewayBillingNo: null,
       gatewayResponse: null,
-      expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + PAYMENT_EXPIRY_MS).toISOString(),
     };
   }
 
@@ -173,13 +175,6 @@ async function listAllOrders(req, res) {
   res.json(data);
 }
 
-const VALID_TRANSITIONS = {
-  pending:          ['awaiting_payment'],
-  awaiting_payment: ['paid'],
-  paid:             ['processing', 'shipped'],
-  processing:       ['shipped'],
-  shipped:          ['delivered'],
-};
 
 async function updateOrderStatus(req, res) {
   const { orderId } = req.params;
@@ -195,7 +190,7 @@ async function updateOrderStatus(req, res) {
 
   if (fetchError || !order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
 
-  const allowed = VALID_TRANSITIONS[order.status] || [];
+  const allowed = ORDER_STATUS_TRANSITIONS[order.status] || [];
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: `Tidak dapat mengubah status dari "${order.status}" ke "${status}"` });
   }
@@ -212,30 +207,8 @@ async function updateOrderStatus(req, res) {
 
   if (error || !updated) return res.status(409).json({ error: 'Status pesanan telah berubah, silakan refresh' });
 
-  // Send email notification for status transitions
-  try {
-    if (status === 'paid' || status === 'processing' || status === 'shipped') {
-      const { data: fullOrder } = await supabaseAdmin
-        .from('orders')
-        .select('order_number, total_amount, shipping_name, order_items(module_code, module_name, quantity, unit_price, subtotal), users(email, name)')
-        .eq('id', orderId)
-        .single();
-
-      if (fullOrder) {
-        const emailPayload = {
-          email: fullOrder.users.email,
-          name: fullOrder.users.name,
-          orderNumber: fullOrder.order_number,
-          totalAmount: fullOrder.total_amount,
-          items: fullOrder.order_items,
-        };
-        if (status === 'paid') await emailService.sendPaymentConfirmed(emailPayload);
-        else if (status === 'processing') await emailService.sendOrderProcessing(emailPayload);
-        else if (status === 'shipped') await emailService.sendOrderShipped(emailPayload);
-      }
-    }
-  } catch (emailErr) {
-    console.error('[Email] Failed to send status email:', emailErr.message);
+  if (status === 'paid' || status === 'processing' || status === 'shipped') {
+    await orderEmailService.sendStatusEmail(orderId, status);
   }
 
   res.json({ message: 'Status pesanan berhasil diperbarui', status });
@@ -244,7 +217,7 @@ async function updateOrderStatus(req, res) {
 async function confirmKarunika(req, res) {
   const { orderId } = req.params;
 
-  const newExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  const newExpiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS).toISOString();
 
   // Atomic UPDATE: only succeeds if order is still pending (eliminates TOCTOU)
   const { data: updated, error } = await supabaseAdmin
@@ -270,25 +243,10 @@ async function confirmKarunika(req, res) {
 
   if (paymentError) console.error('[confirmKarunika] Failed to reset payment expiry:', paymentError.message);
 
-  // Fetch user for email
   try {
-    const { data: userRow } = await supabaseAdmin
-      .from('users')
-      .select('email, name')
-      .eq('id', order.user_id)
-      .single();
-
-    if (userRow) {
-      await emailService.sendPaymentRequest({
-        email: userRow.email,
-        name: userRow.name,
-        orderNumber: order.order_number,
-        totalAmount: order.total_amount,
-        items: order.order_items,
-        bank: 'BCA',
-        account: '2950211345',
-        expiresAt: newExpiresAt,
-      });
+    const payload = await orderEmailService.fetchOrderEmailPayload(orderId);
+    if (payload) {
+      await emailService.sendPaymentRequest({ ...payload, bank: 'BCA', account: '2950211345', expiresAt: newExpiresAt });
     }
   } catch (emailErr) {
     console.error('[Email] Failed to send payment request email:', emailErr.message);
