@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require('../config/supabase');
 const paymentService = require('../services/paymentService');
+const emailService = require('../services/emailService');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -173,9 +174,11 @@ async function listAllOrders(req, res) {
 }
 
 const VALID_TRANSITIONS = {
-  paid: ['processing', 'shipped'],
-  processing: ['shipped'],
-  shipped: ['delivered'],
+  pending:          ['awaiting_payment'],
+  awaiting_payment: ['paid'],
+  paid:             ['processing', 'shipped'],
+  processing:       ['shipped'],
+  shipped:          ['delivered'],
 };
 
 async function updateOrderStatus(req, res) {
@@ -199,37 +202,119 @@ async function updateOrderStatus(req, res) {
 
   const extra = status === 'shipped' ? { shipped_at: new Date().toISOString() } : {};
 
-  const { error } = await supabaseAdmin
+  const { data: updated, error } = await supabaseAdmin
     .from('orders')
     .update({ status, updated_at: new Date().toISOString(), ...extra })
-    .eq('id', orderId);
+    .eq('id', orderId)
+    .eq('status', order.status)    // atomic guard: fails if status changed since fetch
+    .select('id')
+    .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error || !updated) return res.status(409).json({ error: 'Status pesanan telah berubah, silakan refresh' });
+
+  // Send email notification for status transitions
+  try {
+    if (status === 'paid' || status === 'processing' || status === 'shipped') {
+      const { data: fullOrder } = await supabaseAdmin
+        .from('orders')
+        .select('order_number, total_amount, shipping_name, order_items(module_code, module_name, quantity, unit_price, subtotal), users(email, name)')
+        .eq('id', orderId)
+        .single();
+
+      if (fullOrder) {
+        const emailPayload = {
+          email: fullOrder.users.email,
+          name: fullOrder.users.name,
+          orderNumber: fullOrder.order_number,
+          totalAmount: fullOrder.total_amount,
+          items: fullOrder.order_items,
+        };
+        if (status === 'paid') await emailService.sendPaymentConfirmed(emailPayload);
+        else if (status === 'processing') await emailService.sendOrderProcessing(emailPayload);
+        else if (status === 'shipped') await emailService.sendOrderShipped(emailPayload);
+      }
+    }
+  } catch (emailErr) {
+    console.error('[Email] Failed to send status email:', emailErr.message);
+  }
 
   res.json({ message: 'Status pesanan berhasil diperbarui', status });
+}
+
+async function confirmKarunika(req, res) {
+  const { orderId } = req.params;
+
+  const newExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Atomic UPDATE: only succeeds if order is still pending (eliminates TOCTOU)
+  const { data: updated, error } = await supabaseAdmin
+    .from('orders')
+    .update({ status: 'awaiting_payment', updated_at: new Date().toISOString() })
+    .eq('id', orderId)
+    .eq('status', 'pending')
+    .select('id, order_number, total_amount, user_id, order_items(module_code, module_name, quantity, unit_price, subtotal)')
+    .single();
+
+  if (error || !updated) {
+    return res.status(400).json({ error: 'Pesanan tidak ditemukan atau bukan dalam status pending' });
+  }
+
+  const order = updated;
+
+  // Reset payment expiry
+  const { error: paymentError } = await supabaseAdmin
+    .from('payments')
+    .update({ expires_at: newExpiresAt })
+    .eq('order_id', orderId)
+    .eq('status', 'pending');
+
+  if (paymentError) console.error('[confirmKarunika] Failed to reset payment expiry:', paymentError.message);
+
+  // Fetch user for email
+  try {
+    const { data: userRow } = await supabaseAdmin
+      .from('users')
+      .select('email, name')
+      .eq('id', order.user_id)
+      .single();
+
+    if (userRow) {
+      await emailService.sendPaymentRequest({
+        email: userRow.email,
+        name: userRow.name,
+        orderNumber: order.order_number,
+        totalAmount: order.total_amount,
+        items: order.order_items,
+        bank: 'BCA',
+        account: '2950211345',
+        expiresAt: newExpiresAt,
+      });
+    }
+  } catch (emailErr) {
+    console.error('[Email] Failed to send payment request email:', emailErr.message);
+  }
+
+  res.json({ message: 'Stok Karunika dikonfirmasi, email pembayaran dikirim ke pelanggan', status: 'awaiting_payment' });
 }
 
 async function confirmDelivery(req, res) {
   const { id } = req.params;
 
-  const { data: order, error: fetchError } = await supabaseAdmin
-    .from('orders')
-    .select('id, status')
-    .eq('id', id)
-    .eq('user_id', req.user.id)
-    .single();
-
-  if (fetchError || !order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
-  if (order.status !== 'shipped') return res.status(400).json({ error: 'Pesanan belum dalam status dikirim' });
-
-  const { error } = await supabaseAdmin
+  // Atomic UPDATE: ownership + status guard in one query (eliminates TOCTOU)
+  const { data: updated, error } = await supabaseAdmin
     .from('orders')
     .update({ status: 'delivered', updated_at: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('user_id', req.user.id)
+    .eq('status', 'shipped')
+    .select('id')
+    .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error || !updated) {
+    return res.status(400).json({ error: 'Pesanan tidak ditemukan atau belum dalam status dikirim' });
+  }
 
   res.json({ message: 'Penerimaan dikonfirmasi' });
 }
 
-module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmDelivery };
+module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmKarunika, confirmDelivery };

@@ -21,6 +21,7 @@
     "morgan": "~1.9.1",
     "node-cron": "^3.0.3",
     "playwright": "^1.50.1",
+    "resend": "^6.9.4",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

@@ -2,9 +2,22 @@ const { supabase, supabaseAdmin } = require('../config/supabase');
 const env = require('../config/env');
 
 async function register(req, res) {
-  const { email, password, name, nim, phone } = req.body;
-  if (!email || !password || !name) {
-    return res.status(400).json({ error: 'email, password, dan name wajib diisi' });
+  const { email, password, name, nim, phone, birth_place, birth_date,
+          program_id,
+          address_zh_city, address_zh_district, address_zh_road, address_zh_number, address_zh_floor,
+          bank_ntd_code, bank_ntd_name, bank_ntd_account,
+          bank_idr_name, bank_idr_account } = req.body;
+
+  if (!email || !password || !name || !nim || !phone || !birth_place || !birth_date
+      || !program_id
+      || !address_zh_city || !address_zh_district || !address_zh_road || !address_zh_number) {
+    return res.status(400).json({ error: 'email, password, nama, NIM, nomor HP, tempat/tanggal lahir, program studi, dan alamat Mandarin wajib diisi' });
+  }
+
+  const ntdComplete = bank_ntd_code && bank_ntd_account;
+  const idrComplete = bank_idr_name && bank_idr_account;
+  if (!ntdComplete && !idrComplete) {
+    return res.status(400).json({ error: 'Wajib mengisi minimal satu rekening bank (NTD atau IDR)' });
   }
 
   const { data, error } = await supabase.auth.signUp({
@@ -27,7 +40,19 @@ async function register(req, res) {
       return res.status(409).json({ error: 'Email sudah terdaftar, silakan login.' });
     }
     // Orphaned auth user — insert the missing public profile
-    await supabaseAdmin.from('users').insert({ id: signInData.user.id, email, name, nim: nim || null, phone: phone || null });
+    await supabaseAdmin.from('users').insert({
+      id: signInData.user.id, email, name, nim, phone,
+      birth_place: birth_place || null,
+      birth_date: birth_date || null,
+      program_id,
+      address_zh_city, address_zh_district, address_zh_road, address_zh_number,
+      address_zh_floor: address_zh_floor || null,
+      bank_ntd_code: bank_ntd_code || null,
+      bank_ntd_name: bank_ntd_name || null,
+      bank_ntd_account: bank_ntd_account || null,
+      bank_idr_name: bank_idr_name || null,
+      bank_idr_account: bank_idr_account || null,
+    });
     await supabase.auth.signOut();
     return res.status(201).json({ message: 'Akun berhasil dipulihkan. Silakan login.' });
   }
@@ -37,8 +62,18 @@ async function register(req, res) {
     id: data.user.id,
     email,
     name,
-    nim: nim || null,
-    phone: phone || null,
+    nim,
+    phone,
+    birth_place: birth_place || null,
+    birth_date: birth_date || null,
+    program_id,
+    address_zh_city, address_zh_district, address_zh_road, address_zh_number,
+    address_zh_floor: address_zh_floor || null,
+    bank_ntd_code: bank_ntd_code || null,
+    bank_ntd_name: bank_ntd_name || null,
+    bank_ntd_account: bank_ntd_account || null,
+    bank_idr_name: bank_idr_name || null,
+    bank_idr_account: bank_idr_account || null,
   });
 
   if (profileError) {
@@ -88,7 +123,12 @@ async function getMe(req, res) {
 
 async function updateMe(req, res) {
   const allowedFields = ['name', 'nim', 'phone', 'program_id', 'current_semester',
-    'shipping_address', 'city', 'province', 'postal_code', 'country'];
+    'shipping_address', 'city', 'province', 'postal_code', 'country',
+    'bank_ntd_code', 'bank_ntd_name', 'bank_ntd_account',
+    'bank_idr_name', 'bank_idr_account',
+    'birth_place', 'birth_date',
+    'address_zh_city', 'address_zh_district', 'address_zh_road',
+    'address_zh_number', 'address_zh_floor'];
   const updates = {};
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];

@@ -56,4 +56,25 @@ async function getRun(req, res) {
   res.json({ run, changes: changes || [] });
 }
 
-module.exports = { triggerRun, listRuns, getRun };
+async function triggerPrefixRun(req, res) {
+  if (isRunning) {
+    return res.status(409).json({ error: 'Scraper sudah berjalan' });
+  }
+
+  const { data: run } = await supabaseAdmin
+    .from('scraper_runs')
+    .insert({ triggered_by: 'prefix-manual', status: 'running' })
+    .select()
+    .single();
+
+  if (!run) return res.status(500).json({ error: 'Gagal membuat log scraper' });
+
+  res.status(202).json({ message: 'Scraper prefix dimulai', runId: run.id });
+
+  isRunning = true;
+  scraperService.runPrefixScraperService(run.id).finally(() => {
+    isRunning = false;
+  });
+}
+
+module.exports = { triggerRun, triggerPrefixRun, listRuns, getRun };

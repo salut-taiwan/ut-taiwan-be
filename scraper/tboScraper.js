@@ -142,4 +142,57 @@ async function scrapeProgramModules(page, url) {
   return raw.filter(m => m.tbo_code && m.name);
 }
 
-module.exports = { runTboScraper };
+async function runPrefixScraper(prefixes) {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ locale: 'id-ID' });
+  const page = await context.newPage();
+  const modules = [];
+
+  try {
+    let consecutiveFails = 0;
+    for (const prefix of prefixes) {
+      const url = `${TBO_BASE}/book_list/check/${prefix}`;
+      console.log(`[TBO-PREFIX] Scraping prefix: ${prefix}`);
+      try {
+        const mods = await withRetry(() => scrapeProgramModules(page, url));
+        modules.push(...mods);
+        consecutiveFails = 0;
+      } catch (err) {
+        console.warn(`[TBO-PREFIX] Failed prefix ${prefix}:`, err.message);
+        consecutiveFails++;
+      }
+      const pause = Math.min(600 + consecutiveFails * 200, 3000);
+      await sleep(pause);
+    }
+  } finally {
+    await browser.close();
+  }
+
+  // Deduplicate by tbo_code (keep last seen)
+  const seen = new Map();
+  for (const m of modules) seen.set(m.tbo_code, m);
+  return Array.from(seen.values());
+}
+
+async function runFullScraper(prefixes) {
+  // Phase 1: program-based
+  console.log('[TBO-FULL] Phase 1: program-based scraping');
+  const programModules = await runTboScraper();
+  console.log(`[TBO-FULL] Phase 1 complete: ${programModules.length} modules. Resting 10s before Phase 2...`);
+  await sleep(10000);
+
+  // Phase 2: prefix-based
+  console.log('[TBO-FULL] Phase 2: prefix-based scraping');
+  const prefixModules = await runPrefixScraper(prefixes);
+  console.log(`[TBO-FULL] Phase 2 complete: ${prefixModules.length} modules`);
+
+  // Merge: program results first, prefix results override (last-wins by tbo_code)
+  const seen = new Map();
+  for (const m of programModules) seen.set(m.tbo_code, m);
+  for (const m of prefixModules) seen.set(m.tbo_code, m);
+  const merged = Array.from(seen.values());
+  console.log(`[TBO-FULL] Merged: ${merged.length} unique modules`);
+  return merged;
+}
+
+module.exports = { runTboScraper, runPrefixScraper, runFullScraper };

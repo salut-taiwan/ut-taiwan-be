@@ -8,6 +8,7 @@ router.use(auth);
 
 router.get('/admin/all', adminOnly, ctrl.listAllOrders);
 router.patch('/admin/:orderId/status', adminOnly, ctrl.updateOrderStatus);
+router.post('/admin/:orderId/confirm-karunika', adminOnly, ctrl.confirmKarunika);
 router.post('/checkout', ctrl.checkout);
 router.get('/', ctrl.listOrders);
 router.post('/:id/confirm-delivery', ctrl.confirmDelivery);

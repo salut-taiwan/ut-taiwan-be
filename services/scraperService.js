@@ -1,5 +1,19 @@
 const { supabaseAdmin } = require('../config/supabase');
-const { runTboScraper } = require('../scraper/tboScraper');
+const { runTboScraper, runPrefixScraper, runFullScraper } = require('../scraper/tboScraper');
+
+const CATALOG_PREFIXES = [
+  'ADBI','ADPU','ASIP','BING','BIOL','EACC','ECON','EKAP','EKMA','EKSA',
+  'EKSI','EMBS','EPFA','ESBI','ESHA','ESPA','ESTA','FSAB','FSAP','FSAR',
+  'FSDP','FSIH','FSIK','FSIP','FSKI','FSPE','FSSI','FSSO','FSSP','HKUM',
+  'HKUW','IDIK','IPEM','ISIP','LUHT','MATA','MDKK','MKD','MKDI','MKDJ',
+  'MKDK','MKDM','MKDU','MKK','MKKI','MKW','MKWI','MKWJ','MKWN','MKWU',
+  'MSIM','PAJA','PANG','PAUD','PBIN','PBIS','PBN','PDGK','PEBI','PEFI',
+  'PEKI','PEMA','PGTK','PKNI','PKOP','PSOS','PUST','PWKL','SATS','SIPA',
+  'SIPK','SIPS','SKOM','SOSI','SPAD','SPAI','SPAR','SPBI','SPBO','SPDA',
+  'SPEK','SPFI','SPGK','SPIK','SPIKI','SPIKM','SPIN','SPKI','SPKM','SPKN',
+  'SPMT','SPPK','SPTP','STAG','STAT','STB','STBI','STBJ','STDA','STIK',
+  'STM','STMA','STPL','STSI','STTP','TPEN',
+];
 const { detectChanges } = require('../scraper/diffDetector');
 
 const COVER_BUCKET = 'module-covers';
@@ -56,9 +70,9 @@ async function runScraper(runId) {
   try {
     console.log(`[Scraper] Starting run ${runId}`);
 
-    // 1. Scrape all modules from TBO (public pages)
-    const scraped = await runTboScraper();
-    console.log(`[Scraper] Scraped ${scraped.length} modules from TBO`);
+    // 1. Scrape all modules from TBO (program-based + prefix-based, merged)
+    const scraped = await runFullScraper(CATALOG_PREFIXES);
+    console.log(`[Scraper] Scraped ${scraped.length} modules from TBO (full combined run)`);
 
     // 1b. Resolve cover images BEFORE diff (so cover_image_url is populated for diff)
     await processCoverImages(scraped);
@@ -116,4 +130,70 @@ async function runScraper(runId) {
   }
 }
 
-module.exports = { runScraper };
+/**
+ * Prefix-based scraper run: scrape TBO by catalog prefixes → diff against DB → persist changes.
+ */
+async function runPrefixScraperService(runId) {
+  let modulesAdded = 0;
+  let modulesUpdated = 0;
+  let modulesRemoved = 0;
+
+  try {
+    console.log(`[Scraper-Prefix] Starting run ${runId}`);
+
+    const scraped = await runPrefixScraper(CATALOG_PREFIXES);
+    console.log(`[Scraper-Prefix] Scraped ${scraped.length} modules from TBO (prefix mode)`);
+
+    await processCoverImages(scraped);
+
+    const PAGE_SIZE = 1000;
+    const dbModules = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error: selectError } = await supabaseAdmin
+        .from('modules')
+        .select('id, tbo_code, name, price_student, price_general, is_available, cover_image_url, tbo_url')
+        .range(from, from + PAGE_SIZE - 1);
+      if (selectError) throw new Error(`Failed to load modules from DB: ${selectError.message}`);
+      if (!page || page.length === 0) break;
+      dbModules.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    const { toAdd, toUpdate, toRemove } = detectChanges(scraped, dbModules || []);
+
+    const addsPayload    = toAdd.map(({ stock: _s, tbo_image_url: _i, ...mod }) => mod);
+    const updatesPayload = toUpdate.map(({ id, changes, oldData }) => ({ id, changes, old_data: oldData }));
+    const removesPayload = toRemove.map(({ id, oldData }) => ({ id, old_data: oldData }));
+
+    const { data: result, error: rpcError } = await supabaseAdmin.rpc('apply_scraper_changes', {
+      p_run_id:  runId,
+      p_adds:    addsPayload,
+      p_updates: updatesPayload,
+      p_removes: removesPayload,
+    });
+    if (rpcError) throw new Error(`apply_scraper_changes RPC failed: ${rpcError.message}`);
+
+    modulesAdded   = result.added;
+    modulesUpdated = result.updated;
+    modulesRemoved = result.removed;
+
+    console.log(`[Scraper-Prefix] Run ${runId} complete: +${modulesAdded} ~${modulesUpdated} -${modulesRemoved}`);
+  } catch (err) {
+    console.error(`[Scraper-Prefix] Run ${runId} failed:`, err.message);
+    await supabaseAdmin
+      .from('scraper_runs')
+      .update({
+        finished_at: new Date().toISOString(),
+        status: 'failed',
+        modules_added: modulesAdded,
+        modules_updated: modulesUpdated,
+        modules_removed: modulesRemoved,
+        error_message: err.message,
+      })
+      .eq('id', runId);
+  }
+}
+
+module.exports = { runScraper, runPrefixScraperService };
