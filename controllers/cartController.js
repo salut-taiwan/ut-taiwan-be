@@ -13,7 +13,7 @@ async function buildCartDTO(userId) {
   const { data, error } = await supabaseAdmin
     .from('cart_items')
     .select(`
-      id, quantity, price_snapshot,
+      id, quantity, price_snapshot, is_request,
       modules(id, tbo_code, name, cover_image_url, price_student, is_available)
     `)
     .eq('cart_id', cart.id);
@@ -30,6 +30,7 @@ async function buildCartDTO(userId) {
     priceSnapshot: item.price_snapshot,
     subtotal: item.price_snapshot * item.quantity,
     isAvailable: item.modules.is_available,
+    isRequest: item.is_request,
   }));
 
   return {
@@ -60,7 +61,10 @@ async function addItem(req, res) {
     .single();
 
   if (!mod) return res.status(404).json({ error: 'Modul tidak ditemukan' });
-  if (!mod.is_available) return res.status(400).json({ error: 'Modul tidak tersedia' });
+
+  // No price or out of stock → force-request; price_snapshot never null
+  const priceSnapshot = mod.price_student ?? 0;
+  const isRequest = !mod.is_available || !mod.price_student;
 
   const cart = await getOrCreateCart(req.user.id);
 
@@ -70,7 +74,8 @@ async function addItem(req, res) {
       cart_id: cart.id,
       module_id: moduleId,
       quantity,
-      price_snapshot: mod.price_student,
+      price_snapshot: priceSnapshot,
+      is_request: isRequest,
     }, { onConflict: 'cart_id,module_id' });
 
   if (error) return res.status(400).json({ error: error.message });
@@ -122,6 +127,7 @@ async function updateItem(req, res) {
   const { itemId } = req.params;
   const { quantity } = req.body;
 
+  if (quantity < 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
   if (quantity === 0) {
     return removeItem(req, res);
   }
@@ -172,4 +178,44 @@ async function clearCart(req, res) {
   res.json({ message: 'Keranjang berhasil dikosongkan' });
 }
 
-module.exports = { getCart, addItem, addPackage, updateItem, removeItem, clearCart };
+async function convertItemToRequest(req, res) {
+  const { itemId } = req.params;
+  const cart = await getOrCreateCart(req.user.id);
+
+  // Verify the cart item exists and get its module_id
+  const { data: cartItem } = await supabaseAdmin
+    .from('cart_items')
+    .select('id, module_id')
+    .eq('id', itemId)
+    .eq('cart_id', cart.id)
+    .single();
+
+  if (!cartItem) return res.status(404).json({ error: 'Item tidak ditemukan' });
+
+  // Re-check module availability — only convert if still unavailable
+  const { data: mod } = await supabaseAdmin
+    .from('modules')
+    .select('is_available')
+    .eq('id', cartItem.module_id)
+    .single();
+
+  if (mod?.is_available) {
+    return res.status(400).json({ error: 'Modul sudah tersedia kembali, tidak perlu dijadikan permintaan' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('cart_items')
+    .update({ is_request: true })
+    .eq('id', itemId)
+    .eq('cart_id', cart.id)
+    .select('id')
+    .single();
+
+  if (error || !data) return res.status(404).json({ error: 'Item tidak ditemukan' });
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.json(dto);
+}
+
+module.exports = { getCart, addItem, addPackage, updateItem, removeItem, clearCart, convertItemToRequest };

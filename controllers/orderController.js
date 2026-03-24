@@ -35,18 +35,19 @@ async function checkout(req, res) {
 
   const { data: cartItems } = await supabaseAdmin
     .from('cart_items')
-    .select('quantity, price_snapshot, modules(id, tbo_code, name, is_available)')
+    .select('quantity, price_snapshot, is_request, modules(id, tbo_code, name, is_available)')
     .eq('cart_id', cart.id);
 
   if (!cartItems || cartItems.length === 0) {
     return res.status(400).json({ error: 'Keranjang kosong' });
   }
 
-  // Pre-check availability (fast fail — re-validated atomically inside RPC)
-  const unavailable = cartItems.filter(i => !i.modules.is_available);
+  // Pre-check: only block non-request items that became unavailable after being added
+  // Request items (is_request=true) are allowed through regardless of availability
+  const unavailable = cartItems.filter(i => !i.is_request && !i.modules.is_available);
   if (unavailable.length > 0) {
     return res.status(400).json({
-      error: 'Beberapa modul tidak tersedia',
+      error: 'Beberapa modul tidak tersedia. Silakan ubah ke permintaan atau hapus dari keranjang.',
       modules: unavailable.map(i => i.modules.tbo_code),
     });
   }
@@ -78,7 +79,7 @@ async function checkout(req, res) {
     };
   }
 
-  // Build order items array for RPC
+   // Build order items array for RPC (include is_request flag)
   const orderItems = cartItems.map(i => ({
     module_id: i.modules.id,
     module_code: i.modules.tbo_code,
@@ -86,6 +87,7 @@ async function checkout(req, res) {
     quantity: i.quantity,
     unit_price: i.price_snapshot,
     subtotal: i.price_snapshot * i.quantity,
+    is_request: i.is_request,
   }));
 
   // Single atomic write: order + order_items + payment + clear cart
@@ -169,7 +171,7 @@ async function cancelOrder(req, res) {
 async function listAllOrders(req, res) {
   const { data, error } = await supabaseAdmin
     .from('orders')
-    .select('id, order_number, status, total_amount, created_at, shipping_name, shipping_phone, payments(status, amount)')
+    .select('id, order_number, status, total_amount, created_at, shipping_name, shipping_phone, payments(status, amount), order_items(id, module_code, module_name, quantity, unit_price, subtotal, is_request, request_status)')
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
@@ -216,6 +218,21 @@ async function updateOrderStatus(req, res) {
 
 async function confirmKarunika(req, res) {
   const { orderId } = req.params;
+
+  // Block if any request items are still pending — admin must resolve them first
+  const { data: pendingRequests } = await supabaseAdmin
+    .from('order_items')
+    .select('id')
+    .eq('order_id', orderId)
+    .eq('is_request', true)
+    .eq('request_status', 'pending')
+    .limit(1);
+
+  if (pendingRequests && pendingRequests.length > 0) {
+    return res.status(400).json({
+      error: 'Selesaikan semua permintaan terlebih dahulu (setujui atau tolak) sebelum konfirmasi',
+    });
+  }
 
   const newExpiresAt = new Date(Date.now() + PAYMENT_EXPIRY_MS).toISOString();
 
@@ -275,4 +292,79 @@ async function confirmDelivery(req, res) {
   res.json({ message: 'Penerimaan dikonfirmasi' });
 }
 
-module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmKarunika, confirmDelivery };
+async function updateRequestItemStatus(req, res) {
+  const { orderId, itemId } = req.params;
+  const { status, unit_price } = req.body;
+
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Status harus approved atau rejected' });
+  }
+
+  if (status === 'approved' && unit_price !== undefined) {
+    if (typeof unit_price !== 'number' || unit_price <= 0) {
+      return res.status(400).json({ error: 'Harga harus berupa angka positif' });
+    }
+  }
+
+  // Fetch item to get quantity for subtotal recalc
+  const { data: existingItem } = await supabaseAdmin
+    .from('order_items')
+    .select('id, quantity')
+    .eq('id', itemId)
+    .eq('order_id', orderId)
+    .single();
+
+  if (!existingItem) return res.status(404).json({ error: 'Item permintaan tidak ditemukan' });
+
+  const updatePayload = { request_status: status };
+  if (status === 'approved' && unit_price !== undefined) {
+    updatePayload.unit_price = unit_price;
+    updatePayload.subtotal   = unit_price * existingItem.quantity;
+  }
+
+  const { data: item, error } = await supabaseAdmin
+    .from('order_items')
+    .update(updatePayload)
+    .eq('id', itemId)
+    .eq('order_id', orderId)
+    .eq('is_request', true)
+    .select('id, subtotal')
+    .single();
+
+  if (error || !item) {
+    return res.status(404).json({ error: 'Item permintaan tidak ditemukan' });
+  }
+
+  const needsRecalc = status === 'rejected' || (status === 'approved' && unit_price !== undefined);
+  if (needsRecalc) {
+    const { data: allItems } = await supabaseAdmin
+      .from('order_items')
+      .select('subtotal, request_status')
+      .eq('order_id', orderId);
+
+    const newSubtotal = (allItems || [])
+      .filter(i => i.request_status !== 'rejected')
+      .reduce((sum, i) => sum + Number(i.subtotal), 0);
+
+    if (status === 'rejected' && newSubtotal <= 0) {
+      return res.status(400).json({
+        error: 'Tidak dapat menolak semua item — batalkan pesanan jika tidak ada yang bisa dipenuhi',
+      });
+    }
+
+    await supabaseAdmin
+      .from('orders')
+      .update({ subtotal: newSubtotal, total_amount: newSubtotal, updated_at: new Date().toISOString() })
+      .eq('id', orderId);
+
+    await supabaseAdmin
+      .from('payments')
+      .update({ amount: newSubtotal })
+      .eq('order_id', orderId)
+      .eq('status', 'pending');
+  }
+
+  res.json({ message: 'Status permintaan berhasil diperbarui', status });
+}
+
+module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmKarunika, confirmDelivery, updateRequestItemStatus };
