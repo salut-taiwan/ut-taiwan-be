@@ -58,7 +58,7 @@ async function listSubjects(req, res) {
       id, code, name, sks, exam_period, semester_hint, notes, is_required,
       subject_modules(
         sort_order,
-        modules(id, tbo_code, name, cover_image_url, price_student, is_available)
+        modules(id, tbo_code, name, cover_image_url, price_student, is_available, deleted_at)
       )
     `)
     .eq('program_id', id)
@@ -69,6 +69,17 @@ async function listSubjects(req, res) {
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
+
+  // Strip soft-deleted modules before returning to client
+  data?.forEach(subject => {
+    subject.subject_modules = (subject.subject_modules || [])
+      .filter(sm => sm.modules && !sm.modules.deleted_at)
+      .map(sm => {
+        const { deleted_at, ...moduleRest } = sm.modules;
+        return { ...sm, modules: moduleRest };
+      });
+  });
+
   res.json(data);
 }
 

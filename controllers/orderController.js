@@ -2,7 +2,7 @@ const { supabaseAdmin } = require('../config/supabase');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
 const orderEmailService = require('../services/orderEmailService');
-const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS } = require('../config/constants');
+const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK } = require('../config/constants');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -149,7 +149,42 @@ async function getOrder(req, res) {
     .single();
 
   if (error || !data) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
-  res.json(data);
+
+  const order = data;
+
+  // Computed fields
+  order.step_index = ORDER_STEPS.indexOf(order.status);
+  order.can_cancel = order.status === 'pending';
+
+  if (order.status === 'shipped' && order.shipped_at) {
+    const deadlineMs = new Date(order.shipped_at).getTime() + CONFIRM_DEADLINE_MS;
+    order.confirm_deadline = new Date(deadlineMs).toISOString();
+    order.confirm_deadline_is_urgent = (deadlineMs - Date.now()) / (1000 * 60 * 60 * 24) < 2;
+  }
+
+  if (order.payments?.length) {
+    const p = order.payments[0];
+    p.show_payment_instructions = p.status === 'pending' && order.status === 'awaiting_payment';
+    p.show_payment_deadline     = !!(p.expires_at && p.status === 'pending' && order.status !== 'pending');
+    if (p.show_payment_instructions) {
+      p.bank_name    = PAYMENT_BANK.bank;
+      p.bank_account = PAYMENT_BANK.account;
+      p.bank_holder  = PAYMENT_BANK.holder;
+    }
+  }
+
+  if (order.order_items?.length) {
+    order.order_items = order.order_items.map(item => ({
+      ...item,
+      display_status:
+        item.request_status === 'rejected'                   ? 'rejected'        :
+        item.is_request && item.request_status === 'pending' ? 'pending_request' :
+        item.is_request && item.unit_price === 0             ? 'zero_price'      :
+        'normal',
+    }));
+  }
+
+  res.json(order);
 }
 
 async function cancelOrder(req, res) {

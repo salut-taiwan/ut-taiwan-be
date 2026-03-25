@@ -31,6 +31,8 @@ async function buildCartDTO(userId) {
     subtotal: item.price_snapshot * item.quantity,
     isAvailable: item.modules.is_available,
     isRequest: item.is_request,
+    isStale: !item.modules.is_available && !item.is_request,
+    isPricePending: item.is_request && !item.price_snapshot,
   }));
 
   return {
@@ -39,6 +41,7 @@ async function buildCartDTO(userId) {
     items,
     subtotal: items.reduce((sum, i) => sum + i.subtotal, 0),
     itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+    hasStaleItems: items.some(i => i.isStale),
   };
 }
 
