@@ -100,16 +100,17 @@ async function addPackage(req, res) {
 
   const cart = await getOrCreateCart(req.user.id);
   const cartItems = (pkg.package_modules || [])
-    .filter(pm => pm.modules?.is_available)
+    .filter(pm => pm.modules)
     .map(pm => ({
       cart_id: cart.id,
       module_id: pm.modules.id,
       quantity: 1,
-      price_snapshot: pm.modules.price_student,
+      price_snapshot: pm.modules.price_student ?? 0,
+      is_request: !pm.modules.is_available || !pm.modules.price_student,
     }));
 
   if (cartItems.length === 0) {
-    return res.status(400).json({ error: 'Tidak ada modul tersedia dalam paket ini' });
+    return res.status(400).json({ error: 'Tidak ada modul dalam paket ini' });
   }
 
   const { error } = await supabaseAdmin

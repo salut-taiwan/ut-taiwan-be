@@ -306,15 +306,20 @@ async function updateRequestItemStatus(req, res) {
     }
   }
 
-  // Fetch item to get quantity for subtotal recalc
+  // Fetch item to get quantity + current price for guards
   const { data: existingItem } = await supabaseAdmin
     .from('order_items')
-    .select('id, quantity')
+    .select('id, quantity, unit_price')
     .eq('id', itemId)
     .eq('order_id', orderId)
     .single();
 
   if (!existingItem) return res.status(404).json({ error: 'Item permintaan tidak ditemukan' });
+
+  // Guard: zero-price item requires a price before it can be approved
+  if (status === 'approved' && existingItem.unit_price === 0 && unit_price === undefined) {
+    return res.status(400).json({ error: 'Masukkan harga untuk item ini sebelum menyetujui' });
+  }
 
   const updatePayload = { request_status: status };
   if (status === 'approved' && unit_price !== undefined) {
