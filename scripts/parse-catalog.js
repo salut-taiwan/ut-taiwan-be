@@ -622,6 +622,23 @@ function generatePlaceholderModulesSQL(allPrograms) {
       ` ON CONFLICT (tbo_code) DO NOTHING;`
     );
   }
+
+  // 1b. Placeholder modules for subjects with NO module codes (capstone/thesis/project)
+  lines.push('-- ── Step 1b: placeholder modules for capstone/no-code subjects ──');
+  for (const [dbCode, { subjects }] of Object.entries(allPrograms)) {
+    const seenStubs = new Set();
+    for (const s of subjects) {
+      if (s.moduleCodes.length > 0) continue;
+      const stubCode = `${s.code}-1`;
+      if (seenStubs.has(stubCode)) continue;
+      seenStubs.add(stubCode);
+      lines.push(
+        `INSERT INTO modules (tbo_code, name, is_available, price_student, price_general, publisher)` +
+        ` VALUES (${esc(stubCode)}, ${esc(s.name)}, false, NULL, NULL, 'Universitas Terbuka')` +
+        ` ON CONFLICT (tbo_code) DO NOTHING;`
+      );
+    }
+  }
   lines.push('');
 
   // 2. Re-run subject_modules links (idempotent — same as in 003)
@@ -644,6 +661,25 @@ function generatePlaceholderModulesSQL(allPrograms) {
           ` ON CONFLICT (subject_id, module_id) DO NOTHING;`
         );
       }
+    }
+  }
+  lines.push('');
+
+  // 2b. subject_modules links for capstone/no-code subjects (exact tbo_code match)
+  lines.push('-- ── Step 2b: subject → module links (capstone/no-code) ──────────');
+  for (const [dbCode, { subjects }] of Object.entries(allPrograms)) {
+    for (const s of subjects) {
+      if (s.moduleCodes.length > 0) continue;
+      const stubCode = `${s.code}-1`;
+      lines.push(
+        `INSERT INTO subject_modules (subject_id, module_id)` +
+        ` SELECT s.id, m.id` +
+        ` FROM subjects s` +
+        ` JOIN programs p ON s.program_id = p.id` +
+        ` JOIN modules m ON m.tbo_code = ${esc(stubCode)}` +
+        ` WHERE p.code = ${esc(dbCode)} AND s.code = ${esc(s.code)}` +
+        ` ON CONFLICT (subject_id, module_id) DO NOTHING;`
+      );
     }
   }
   lines.push('');

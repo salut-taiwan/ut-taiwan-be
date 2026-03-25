@@ -19,6 +19,7 @@
     "helmet": "^8.1.0",
     "http-errors": "~1.6.3",
     "morgan": "~1.9.1",
+    "multer": "^2.1.1",
     "node-cron": "^3.0.3",
     "playwright": "^1.50.1",
     "resend": "^6.9.4",
