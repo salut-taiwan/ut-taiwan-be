@@ -60,14 +60,12 @@ async function uploadProof(req, res) {
 
   if (upErr) return res.status(500).json({ error: upErr.message });
 
-  const { data: { publicUrl } } = supabaseAdmin.storage.from('payment-docs').getPublicUrl(path);
-
   await supabaseAdmin
     .from('payments')
-    .update({ proof_url: publicUrl, proof_uploaded_at: new Date().toISOString() })
+    .update({ proof_path: path, proof_uploaded_at: new Date().toISOString() })
     .eq('order_id', orderId);
 
-  res.json({ proof_url: publicUrl });
+  res.json({ ok: true });
 }
 
 async function uploadInvoice(req, res) {
@@ -83,14 +81,55 @@ async function uploadInvoice(req, res) {
 
   if (upErr) return res.status(500).json({ error: upErr.message });
 
-  const { data: { publicUrl } } = supabaseAdmin.storage.from('payment-docs').getPublicUrl(path);
-
   await supabaseAdmin
     .from('payments')
-    .update({ invoice_url: publicUrl })
+    .update({ invoice_path: path })
     .eq('order_id', orderId);
 
-  res.json({ invoice_url: publicUrl });
+  res.json({ ok: true });
 }
 
-module.exports = { confirmPayment, getPaymentStatus, uploadProof, uploadInvoice };
+const CONTENT_TYPES = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  webp: 'image/webp', pdf: 'application/pdf',
+};
+
+async function viewProof(req, res) {
+  const { orderId } = req.params;
+
+  const { data: userRecord } = await supabaseAdmin.from('users').select('role').eq('id', req.user.id).single();
+  const isAdmin = userRecord?.role === 'admin';
+
+  let q = supabaseAdmin.from('orders').select('id').eq('id', orderId);
+  if (!isAdmin) q = q.eq('user_id', req.user.id);
+  const { data: order } = await q.single();
+  if (!order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+  const { data: payment } = await supabaseAdmin.from('payments').select('proof_path').eq('order_id', orderId).single();
+  if (!payment?.proof_path) return res.status(404).json({ error: 'Bukti tidak ditemukan' });
+
+  const { data: blob, error } = await supabaseAdmin.storage.from('payment-docs').download(payment.proof_path);
+  if (error || !blob) return res.status(500).json({ error: 'Gagal memuat file' });
+
+  const ext = payment.proof_path.split('.').pop()?.toLowerCase();
+  res.setHeader('Content-Type', CONTENT_TYPES[ext] || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline');
+  res.send(Buffer.from(await blob.arrayBuffer()));
+}
+
+async function viewInvoice(req, res) {
+  const { orderId } = req.params;
+
+  const { data: payment } = await supabaseAdmin.from('payments').select('invoice_path').eq('order_id', orderId).single();
+  if (!payment?.invoice_path) return res.status(404).json({ error: 'Invoice tidak ditemukan' });
+
+  const { data: blob, error } = await supabaseAdmin.storage.from('payment-docs').download(payment.invoice_path);
+  if (error || !blob) return res.status(500).json({ error: 'Gagal memuat file' });
+
+  const ext = payment.invoice_path.split('.').pop()?.toLowerCase();
+  res.setHeader('Content-Type', CONTENT_TYPES[ext] || 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'inline');
+  res.send(Buffer.from(await blob.arrayBuffer()));
+}
+
+module.exports = { confirmPayment, getPaymentStatus, uploadProof, uploadInvoice, viewProof, viewInvoice };
