@@ -55,6 +55,7 @@ async function checkout(req, res) {
   const subtotal = cartItems.reduce((sum, i) => sum + i.price_snapshot * i.quantity, 0);
   const shippingCost = 0;
   const totalAmount = subtotal + shippingCost;
+  const uniqueCode = Math.floor(Math.random() * 500) + 100; // 100–599
   const orderNumber = generateOrderNumber();
 
   // Call gateway (external HTTP) — before DB write; fallback to manual on error
@@ -108,7 +109,8 @@ async function checkout(req, res) {
     p_payment_gateway:    gatewayResult.gateway,
     p_payment_method:     paymentMethod,
     p_payment_bank:       paymentBank || null,
-    p_payment_amount:     totalAmount,
+    p_payment_amount:     totalAmount + uniqueCode,
+    p_unique_code:        uniqueCode,
     p_payment_expires_at: gatewayResult.expiresAt,
     p_gateway_payment_id: gatewayResult.gatewayPaymentId,
     p_gateway_billing_no: gatewayResult.gatewayBillingNo,
@@ -397,9 +399,17 @@ async function updateRequestItemStatus(req, res) {
       .update({ subtotal: newSubtotal, total_amount: newSubtotal, updated_at: new Date().toISOString() })
       .eq('id', orderId);
 
+    const { data: existingPayment } = await supabaseAdmin
+      .from('payments')
+      .select('unique_code')
+      .eq('order_id', orderId)
+      .eq('status', 'pending')
+      .single();
+    const paymentUniqueCode = existingPayment?.unique_code ?? 0;
+
     await supabaseAdmin
       .from('payments')
-      .update({ amount: newSubtotal })
+      .update({ amount: newSubtotal + paymentUniqueCode })
       .eq('order_id', orderId)
       .eq('status', 'pending');
   }
