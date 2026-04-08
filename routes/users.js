@@ -1,9 +1,11 @@
-var express = require('express');
-var router = express.Router();
+const express = require('express');
+const router = express.Router();
+const auth = require('../middleware/auth');
+const adminOnly = require('../middleware/adminOnly');
+const ctrl = require('../controllers/userController');
 
-/* GET users listing. */
-router.get('/', function(req, res, next) {
-  res.send('respond with a resource');
-});
+router.use(auth);
+router.get('/admin/all', adminOnly, ctrl.listUsers);
+router.patch('/admin/:userId/salut', adminOnly, ctrl.updateUserSalut);
 
 module.exports = router;
