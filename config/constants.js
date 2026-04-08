@@ -13,4 +13,5 @@ module.exports = {
   },
   ORDER_STEPS: ['pending', 'awaiting_payment', 'paid', 'processing', 'shipped', 'delivered'],
   PAYMENT_BANK: { bank: 'BCA', account: '2950211345', holder: 'Nathasya Vira Nerisa' },
+  SALUT_FEES: { ONGKIR: 300000, BOX: 100000, ADMIN: 25000 },
 };

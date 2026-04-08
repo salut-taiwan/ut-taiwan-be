@@ -2,7 +2,7 @@ const { supabaseAdmin } = require('../config/supabase');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
 const orderEmailService = require('../services/orderEmailService');
-const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK } = require('../config/constants');
+const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK, SALUT_FEES } = require('../config/constants');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -52,9 +52,15 @@ async function checkout(req, res) {
     });
   }
 
+  const { data: userRecord } = await supabaseAdmin
+    .from('users').select('is_salut').eq('id', req.user.id).single();
+  const isSalut  = userRecord?.is_salut ?? false;
+  const ongkir   = isSalut ? 0 : SALUT_FEES.ONGKIR;
+  const boxFee   = isSalut ? 0 : SALUT_FEES.BOX;
+  const adminFee = isSalut ? 0 : SALUT_FEES.ADMIN;
+
   const subtotal = cartItems.reduce((sum, i) => sum + i.price_snapshot * i.quantity, 0);
-  const shippingCost = 0;
-  const totalAmount = subtotal + shippingCost;
+  const totalAmount = subtotal + ongkir + boxFee + adminFee;
   const uniqueCode = Math.floor(Math.random() * 500) + 100; // 100–599
   const orderNumber = generateOrderNumber();
 
@@ -96,7 +102,10 @@ async function checkout(req, res) {
     p_user_id:            req.user.id,
     p_order_number:       orderNumber,
     p_subtotal:           subtotal,
-    p_shipping_cost:      shippingCost,
+    p_shipping_cost:      ongkir,
+    p_box_fee:            boxFee,
+    p_admin_fee:          adminFee,
+    p_is_salut_order:     isSalut,
     p_total_amount:       totalAmount,
     p_shipping_name:      shippingName,
     p_shipping_address:   shippingAddress,
@@ -394,9 +403,14 @@ async function updateRequestItemStatus(req, res) {
       });
     }
 
+    const { data: orderFees } = await supabaseAdmin
+      .from('orders').select('shipping_cost, box_fee, admin_fee').eq('id', orderId).single();
+    const fees = (orderFees?.shipping_cost ?? 0) + (orderFees?.box_fee ?? 0) + (orderFees?.admin_fee ?? 0);
+    const newTotalAmount = newSubtotal + fees;
+
     await supabaseAdmin
       .from('orders')
-      .update({ subtotal: newSubtotal, total_amount: newSubtotal, updated_at: new Date().toISOString() })
+      .update({ subtotal: newSubtotal, total_amount: newTotalAmount, updated_at: new Date().toISOString() })
       .eq('id', orderId);
 
     const { data: existingPayment } = await supabaseAdmin
@@ -409,7 +423,7 @@ async function updateRequestItemStatus(req, res) {
 
     await supabaseAdmin
       .from('payments')
-      .update({ amount: newSubtotal + paymentUniqueCode })
+      .update({ amount: newTotalAmount + paymentUniqueCode })
       .eq('order_id', orderId)
       .eq('status', 'pending');
   }
