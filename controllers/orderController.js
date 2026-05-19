@@ -101,7 +101,7 @@ async function checkout(req, res) {
     // Merchandise item — treated as a request so admin confirms before fulfillment
     return {
       module_id: null,
-      module_code: i.sku_id,
+      module_code: null,
       module_name: i.product_name_snapshot,
       quantity: i.quantity,
       unit_price: i.price_snapshot,
@@ -166,6 +166,10 @@ async function checkout(req, res) {
   }
 
   res.status(201).json({ order: rpcData.order, payment: rpcData.payment });
+
+  orderEmailService.fetchOrderEmailPayload(rpcData.order.id)
+    .then(p => p && emailService.sendOrderConfirmation(p))
+    .catch(() => {});
 }
 
 async function listOrders(req, res) {
@@ -245,6 +249,10 @@ async function cancelOrder(req, res) {
   }
 
   res.json({ message: 'Pesanan berhasil dibatalkan' });
+
+  orderEmailService.fetchOrderEmailPayload(id)
+    .then(p => p && emailService.sendOrderCancelled(p))
+    .catch(() => {});
 }
 
 async function listAllOrders(req, res) {
@@ -466,6 +474,31 @@ async function updateRequestItemStatus(req, res) {
   }
 
   res.json({ message: 'Status permintaan berhasil diperbarui', status });
+
+  supabaseAdmin
+    .from('order_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', orderId)
+    .eq('is_request', true)
+    .eq('request_status', 'pending')
+    .then(async ({ count }) => {
+      if (count !== 0) return;
+      const [{ data: allReqItems }, { data: orderRow }] = await Promise.all([
+        supabaseAdmin.from('order_items').select('module_name, request_status').eq('order_id', orderId).eq('is_request', true),
+        supabaseAdmin.from('orders').select('order_number, user_id').eq('id', orderId).single(),
+      ]);
+      if (!orderRow) return;
+      const { data: userRow } = await supabaseAdmin.from('users').select('email, name').eq('id', orderRow.user_id).single();
+      if (!userRow) return;
+      emailService.sendRequestItemsResolved({
+        email: userRow.email,
+        name: userRow.name,
+        orderNumber: orderRow.order_number,
+        approved: (allReqItems || []).filter(i => i.request_status === 'approved').map(i => i.module_name),
+        rejected: (allReqItems || []).filter(i => i.request_status === 'rejected').map(i => i.module_name),
+      });
+    })
+    .catch(() => {});
 }
 
 module.exports = { checkout, listOrders, getOrder, cancelOrder, listAllOrders, updateOrderStatus, confirmKarunika, confirmDelivery, updateRequestItemStatus };

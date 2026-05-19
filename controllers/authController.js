@@ -89,7 +89,12 @@ async function login(req, res) {
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return res.status(401).json({ error: 'Email atau password salah' });
+  if (error) {
+    if (error.message === 'Email not confirmed') {
+      return res.status(401).json({ error: 'Email belum diverifikasi. Cek inbox atau folder spam Anda.', code: 'EMAIL_NOT_CONFIRMED' });
+    }
+    return res.status(401).json({ error: 'Email atau password salah' });
+  }
 
   res.json({
     token: data.session.access_token,
@@ -157,4 +162,16 @@ async function refresh(req, res) {
   });
 }
 
-module.exports = { register, login, logout, getMe, updateMe, refresh };
+async function resendVerification(req, res) {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email wajib diisi' });
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: `${env.FRONTEND_URL}/login?verified=true` },
+  });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ message: 'Email verifikasi telah dikirim ulang' });
+}
+
+module.exports = { register, login, logout, getMe, updateMe, refresh, resendVerification };

@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require('../config/supabase');
+const emailService = require('../services/emailService');
 
 const ALLOWED_SORT_COLS = new Set(['name', 'nim', 'created_at']);
 
@@ -148,6 +149,8 @@ async function approveSalutApplication(req, res) {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+
+  emailService.sendSalutApproved({ email: data.email, name: data.name }).catch(() => {});
 }
 
 async function rejectSalutApplication(req, res) {
@@ -182,6 +185,8 @@ async function rejectSalutApplication(req, res) {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+
+  emailService.sendSalutRejected({ email: data.email, name: data.name, reason }).catch(() => {});
 }
 
 module.exports = {
