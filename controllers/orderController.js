@@ -35,16 +35,15 @@ async function checkout(req, res) {
 
   const { data: cartItems } = await supabaseAdmin
     .from('cart_items')
-    .select('quantity, price_snapshot, is_request, modules(id, tbo_code, name, is_available)')
+    .select('quantity, price_snapshot, is_request, sku_id, variant_label, product_name_snapshot, modules(id, tbo_code, name, is_available), product_skus(id, price, products(name))')
     .eq('cart_id', cart.id);
 
   if (!cartItems || cartItems.length === 0) {
     return res.status(400).json({ error: 'Keranjang kosong' });
   }
 
-  // Pre-check: only block non-request items that became unavailable after being added
-  // Request items (is_request=true) are allowed through regardless of availability
-  const unavailable = cartItems.filter(i => !i.is_request && !i.modules.is_available);
+  // Pre-check: only block non-request module items that became unavailable after being added
+  const unavailable = cartItems.filter(i => !i.is_request && i.modules && !i.modules.is_available);
   if (unavailable.length > 0) {
     return res.status(400).json({
       error: 'Beberapa modul tidak tersedia. Silakan ubah ke permintaan atau hapus dari keranjang.',
@@ -86,16 +85,32 @@ async function checkout(req, res) {
     };
   }
 
-  // Build order items array for RPC (include is_request flag)
-  const orderItems = cartItems.map(i => ({
-    module_id: i.modules.id,
-    module_code: i.modules.tbo_code,
-    module_name: i.modules.name,
-    quantity: i.quantity,
-    unit_price: i.price_snapshot,
-    subtotal: i.price_snapshot * i.quantity,
-    is_request: i.is_request,
-  }));
+  // Build order items array for RPC (handles both module and merchandise items)
+  const orderItems = cartItems.map(i => {
+    if (i.modules) {
+      return {
+        module_id: i.modules.id,
+        module_code: i.modules.tbo_code,
+        module_name: i.modules.name,
+        quantity: i.quantity,
+        unit_price: i.price_snapshot,
+        subtotal: i.price_snapshot * i.quantity,
+        is_request: i.is_request,
+      };
+    }
+    // Merchandise item — treated as a request so admin confirms before fulfillment
+    return {
+      module_id: null,
+      module_code: i.sku_id,
+      module_name: i.product_name_snapshot,
+      quantity: i.quantity,
+      unit_price: i.price_snapshot,
+      subtotal: i.price_snapshot * i.quantity,
+      is_request: true,
+      sku_id: i.sku_id,
+      variant_label: i.variant_label,
+    };
+  });
 
   // Append custom (unlisted) modules from checkout form
   const extras = Array.isArray(customItems) ? customItems : [];

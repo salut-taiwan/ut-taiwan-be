@@ -8,6 +8,7 @@ router.use(auth);
 router.get('/', ctrl.getCart);
 router.post('/items', ctrl.addItem);
 router.post('/packages', ctrl.addPackage);
+router.post('/merch', ctrl.addMerch);
 router.put('/items/:itemId', ctrl.updateItem);
 router.patch('/items/:itemId/convert-to-request', ctrl.convertItemToRequest);
 router.delete('/items/:itemId', ctrl.removeItem);

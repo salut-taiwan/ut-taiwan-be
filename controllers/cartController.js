@@ -14,26 +14,52 @@ async function buildCartDTO(userId) {
     .from('cart_items')
     .select(`
       id, quantity, price_snapshot, is_request,
-      modules(id, tbo_code, name, cover_image_url, price_student, is_available)
+      sku_id, variant_label, product_name_snapshot,
+      modules(id, tbo_code, name, cover_image_url, price_student, is_available),
+      product_skus(
+        id, price, option_names,
+        products(id, name, product_images(image_url, sort_order))
+      )
     `)
     .eq('cart_id', cart.id);
 
   if (error) return null;
 
-  const items = data.map(item => ({
-    id: item.id,
-    moduleId: item.modules.id,
-    tboCode: item.modules.tbo_code,
-    moduleName: item.modules.name,
-    coverImageUrl: item.modules.cover_image_url,
-    quantity: item.quantity,
-    priceSnapshot: item.price_snapshot,
-    subtotal: item.price_snapshot * item.quantity,
-    isAvailable: item.modules.is_available,
-    isRequest: item.is_request,
-    isStale: !item.modules.is_available && !item.is_request,
-    isPricePending: item.is_request && !item.price_snapshot,
-  }));
+  const items = data.map(item => {
+    if (item.modules) {
+      return {
+        id: item.id,
+        itemType: 'module',
+        moduleId: item.modules.id,
+        tboCode: item.modules.tbo_code,
+        moduleName: item.modules.name,
+        coverImageUrl: item.modules.cover_image_url,
+        quantity: item.quantity,
+        priceSnapshot: item.price_snapshot,
+        subtotal: item.price_snapshot * item.quantity,
+        isAvailable: item.modules.is_available,
+        isRequest: item.is_request,
+        isStale: !item.modules.is_available && !item.is_request,
+        isPricePending: item.is_request && !item.price_snapshot,
+      };
+    }
+    // Merchandise item
+    const imgs = (item.product_skus?.products?.product_images || [])
+      .sort((a, b) => a.sort_order - b.sort_order);
+    return {
+      id: item.id,
+      itemType: 'merch',
+      skuId: item.sku_id,
+      variantLabel: item.variant_label,
+      productNameSnapshot: item.product_name_snapshot,
+      coverImageUrl: imgs[0]?.image_url ?? null,
+      quantity: item.quantity,
+      priceSnapshot: item.price_snapshot,
+      subtotal: item.price_snapshot * item.quantity,
+      isAvailable: true,
+      isRequest: item.is_request,
+    };
+  });
 
   return {
     id: cart.id,
@@ -222,4 +248,42 @@ async function convertItemToRequest(req, res) {
   res.json(dto);
 }
 
-module.exports = { getCart, addItem, addPackage, updateItem, removeItem, clearCart, convertItemToRequest };
+async function addMerch(req, res) {
+  const { skuId, quantity = 1 } = req.body;
+  if (!skuId) return res.status(400).json({ error: 'skuId wajib diisi' });
+
+  const { data: sku } = await supabaseAdmin
+    .from('product_skus')
+    .select('id, price, option_names, products(id, name)')
+    .eq('id', skuId)
+    .single();
+
+  if (!sku) return res.status(404).json({ error: 'SKU tidak ditemukan' });
+
+  const variantLabel = Array.isArray(sku.option_names) && sku.option_names.length > 0
+    ? sku.option_names.join(' / ')
+    : null;
+
+  const cart = await getOrCreateCart(req.user.id);
+
+  const { error } = await supabaseAdmin
+    .from('cart_items')
+    .upsert({
+      cart_id: cart.id,
+      module_id: null,
+      sku_id: skuId,
+      quantity: Math.max(1, parseInt(quantity) || 1),
+      price_snapshot: sku.price,
+      variant_label: variantLabel,
+      product_name_snapshot: sku.products.name,
+      is_request: false,
+    }, { onConflict: 'cart_id,sku_id' });
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  res.status(201).json(dto);
+}
+
+module.exports = { getCart, addItem, addPackage, updateItem, removeItem, clearCart, convertItemToRequest, addMerch };
