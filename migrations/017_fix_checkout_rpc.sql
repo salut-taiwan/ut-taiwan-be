@@ -23,12 +23,12 @@ CREATE OR REPLACE FUNCTION checkout_order(
   p_payment_method      text,
   p_payment_bank        text,
   p_payment_amount      numeric,
-  p_unique_code         int DEFAULT 0,
   p_payment_expires_at  timestamptz,
   p_gateway_payment_id  text,
   p_gateway_billing_no  text,
   p_gateway_response    jsonb,
-  p_order_items         jsonb
+  p_order_items         jsonb,
+  p_unique_code         int DEFAULT 0
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE

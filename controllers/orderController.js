@@ -15,7 +15,7 @@ async function checkout(req, res) {
   const {
     shippingName, shippingAddress, shippingCity, shippingProvince,
     shippingPostal, shippingCountry, shippingPhone, notes,
-    paymentMethod, paymentBank,
+    paymentMethod, paymentBank, customItems,
   } = req.body;
 
   // Validate required fields
@@ -86,7 +86,7 @@ async function checkout(req, res) {
     };
   }
 
-   // Build order items array for RPC (include is_request flag)
+  // Build order items array for RPC (include is_request flag)
   const orderItems = cartItems.map(i => ({
     module_id: i.modules.id,
     module_code: i.modules.tbo_code,
@@ -96,6 +96,24 @@ async function checkout(req, res) {
     subtotal: i.price_snapshot * i.quantity,
     is_request: i.is_request,
   }));
+
+  // Append custom (unlisted) modules from checkout form
+  const extras = Array.isArray(customItems) ? customItems : [];
+  for (const ci of extras) {
+    if (!ci.moduleCode || typeof ci.moduleCode !== 'string' || !ci.moduleCode.trim()) {
+      return res.status(400).json({ error: 'Kode modul wajib diisi untuk setiap item tambahan' });
+    }
+  }
+  const customOrderItems = extras.map(ci => ({
+    module_id: null,
+    module_code: ci.moduleCode.trim().slice(0, 30),
+    module_name: ci.moduleName?.trim() || ci.moduleCode.trim().slice(0, 30),
+    quantity: Math.max(1, parseInt(ci.quantity) || 1),
+    unit_price: 0,
+    subtotal: 0,
+    is_request: true,
+  }));
+  const allOrderItems = [...orderItems, ...customOrderItems];
 
   // Single atomic write: order + order_items + payment + clear cart
   const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('checkout_order', {
@@ -124,7 +142,7 @@ async function checkout(req, res) {
     p_gateway_payment_id: gatewayResult.gatewayPaymentId,
     p_gateway_billing_no: gatewayResult.gatewayBillingNo,
     p_gateway_response:   gatewayResult.gatewayResponse,
-    p_order_items:        orderItems,
+    p_order_items:        allOrderItems,
   });
 
   if (rpcError) {
@@ -355,15 +373,20 @@ async function updateRequestItemStatus(req, res) {
   // Fetch item to get quantity + current price for guards
   const { data: existingItem } = await supabaseAdmin
     .from('order_items')
-    .select('id, quantity, unit_price')
+    .select('id, quantity, unit_price, is_request')
     .eq('id', itemId)
     .eq('order_id', orderId)
     .single();
 
-  if (!existingItem) return res.status(404).json({ error: 'Item permintaan tidak ditemukan' });
+  if (!existingItem) return res.status(404).json({ error: 'Item tidak ditemukan' });
 
-  // Guard: zero-price item requires a price before it can be approved
-  if (status === 'approved' && existingItem.unit_price === 0 && unit_price === undefined) {
+  // Only request items can be approved
+  if (status === 'approved' && !existingItem.is_request) {
+    return res.status(400).json({ error: 'Hanya item permintaan yang bisa disetujui' });
+  }
+
+  // Guard: zero-price request item requires a price before it can be approved
+  if (status === 'approved' && existingItem.is_request && existingItem.unit_price === 0 && unit_price === undefined) {
     return res.status(400).json({ error: 'Masukkan harga untuk item ini sebelum menyetujui' });
   }
 
@@ -378,12 +401,11 @@ async function updateRequestItemStatus(req, res) {
     .update(updatePayload)
     .eq('id', itemId)
     .eq('order_id', orderId)
-    .eq('is_request', true)
     .select('id, subtotal')
     .single();
 
   if (error || !item) {
-    return res.status(404).json({ error: 'Item permintaan tidak ditemukan' });
+    return res.status(404).json({ error: 'Item tidak ditemukan' });
   }
 
   const needsRecalc = status === 'rejected' || (status === 'approved' && unit_price !== undefined);
