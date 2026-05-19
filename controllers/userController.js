@@ -51,4 +51,28 @@ async function updateUserSalut(req, res) {
   res.json(data);
 }
 
-module.exports = { listUsers, updateUserSalut };
+async function bulkUpdateUserSalut(req, res) {
+  const { userIds, is_salut } = req.body;
+
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ error: 'userIds must be a non-empty array' });
+  }
+  if (userIds.length > 200) {
+    return res.status(400).json({ error: 'Cannot update more than 200 users at once' });
+  }
+  if (typeof is_salut !== 'boolean') {
+    return res.status(400).json({ error: 'is_salut must be a boolean' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .update({ is_salut })
+    .in('id', userIds)
+    .eq('role', 'student')
+    .select('id');
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ updated: data?.length ?? 0 });
+}
+
+module.exports = { listUsers, updateUserSalut, bulkUpdateUserSalut };

@@ -217,7 +217,7 @@ async function cancelOrder(req, res) {
 async function listAllOrders(req, res) {
   const { data, error } = await supabaseAdmin
     .from('orders')
-    .select('id, order_number, status, total_amount, created_at, shipping_name, shipping_phone, payments(status, amount, proof_path, invoice_path, proof_uploaded_at), order_items(id, module_code, module_name, quantity, unit_price, subtotal, is_request, request_status)')
+    .select('id, order_number, status, subtotal, shipping_cost, box_fee, admin_fee, is_salut_order, total_amount, created_at, shipping_name, shipping_phone, payments(status, amount, proof_path, invoice_path, proof_uploaded_at), order_items(id, module_code, module_name, quantity, unit_price, subtotal, is_request, request_status)')
     .order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
