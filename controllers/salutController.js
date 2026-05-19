@@ -27,7 +27,10 @@ async function uploadProof(req, res) {
     .from('salut-proofs')
     .upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: false });
 
-  if (error) return res.status(500).json({ error: 'Gagal mengunggah file' });
+  if (error) {
+    console.error('[salut uploadProof] Supabase storage error:', error);
+    return res.status(500).json({ error: `Gagal mengunggah file: ${error.message}` });
+  }
   res.json({ url: storagePath });
 }
 

@@ -20,12 +20,13 @@ function formatDate(iso) {
 }
 
 function itemRows(items = []) {
-  return items.map(i =>
-    `<tr>
-      <td style="padding:6px 0;color:#374151;font-size:13px;">${i.module_code} — ${i.module_name}</td>
+  return items.map(i => {
+    const label = i.module_code ? `${i.module_code} ${i.module_name}` : i.module_name;
+    return `<tr>
+      <td style="padding:6px 0;color:#374151;font-size:13px;">${label}</td>
       <td style="padding:6px 0;text-align:right;color:#374151;font-size:13px;">${formatIDR(i.subtotal)}</td>
-    </tr>`
-  ).join('');
+    </tr>`;
+  }).join('');
 }
 
 async function _send(payload) {
