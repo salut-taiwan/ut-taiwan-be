@@ -1,4 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { scraper_runs, modules } = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const { runTboScraper, runPrefixScraper, runFullScraper } = require('../scraper/tboScraper');
 const { detectChanges } = require('../scraper/diffDetector');
 const {
@@ -64,17 +67,26 @@ async function processCoverImages(modules) {
 
 async function loadAllDbModules() {
   const dbModules = [];
-  let from = 0;
+  let offset = 0;
   while (true) {
-    const { data: page, error: selectError } = await supabaseAdmin
-      .from('modules')
-      .select('id, tbo_code, name, price_student, price_general, is_available, cover_image_url, tbo_url')
-      .range(from, from + SCRAPER_PAGE_SIZE - 1);
-    if (selectError) throw new Error(`Failed to load modules from DB: ${selectError.message}`);
-    if (!page || page.length === 0) break;
+    const page = await db
+      .select({
+        id: modules.id,
+        tbo_code: modules.tbo_code,
+        name: modules.name,
+        price_student: modules.price_student,
+        price_general: modules.price_general,
+        is_available: modules.is_available,
+        cover_image_url: modules.cover_image_url,
+        tbo_url: modules.tbo_url,
+      })
+      .from(modules)
+      .limit(SCRAPER_PAGE_SIZE)
+      .offset(offset);
+    if (page.length === 0) break;
     dbModules.push(...page);
     if (page.length < SCRAPER_PAGE_SIZE) break;
-    from += SCRAPER_PAGE_SIZE;
+    offset += SCRAPER_PAGE_SIZE;
   }
   return dbModules;
 }
@@ -114,17 +126,16 @@ async function _runScraperCore(runId, scraperFn, label) {
     console.log(`[${label}] Run ${runId} complete: +${modulesAdded} ~${modulesUpdated} -${modulesRemoved}`);
   } catch (err) {
     console.error(`[${label}] Run ${runId} failed:`, err.message);
-    await supabaseAdmin
-      .from('scraper_runs')
-      .update({
-        finished_at: new Date().toISOString(),
+    await db.update(scraper_runs)
+      .set({
+        finished_at: new Date(),
         status: 'failed',
         modules_added: modulesAdded,
         modules_updated: modulesUpdated,
         modules_removed: modulesRemoved,
         error_message: err.message,
       })
-      .eq('id', runId);
+      .where(eq(scraper_runs.id, runId));
   }
 }
 

@@ -1,4 +1,6 @@
-const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { orders, users } = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const emailService = require('./emailService');
 
 /**
@@ -6,19 +8,20 @@ const emailService = require('./emailService');
  * Returns null if the order or user is not found.
  */
 async function fetchOrderEmailPayload(orderId) {
-  const { data: order } = await supabaseAdmin
-    .from('orders')
-    .select('order_number, total_amount, user_id, order_items(module_code, module_name, quantity, unit_price, subtotal)')
-    .eq('id', orderId)
-    .single();
+  const order = await db.query.orders.findFirst({
+    columns: { order_number: true, total_amount: true, user_id: true },
+    where: eq(orders.id, orderId),
+    with: {
+      order_items: { columns: { module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true } },
+    },
+  });
 
   if (!order) return null;
 
-  const { data: userRow } = await supabaseAdmin
-    .from('users')
-    .select('email, name')
-    .eq('id', order.user_id)
-    .single();
+  const userRow = await db.query.users.findFirst({
+    columns: { email: true, name: true },
+    where: eq(users.id, order.user_id),
+  });
 
   if (!userRow) return null;
 

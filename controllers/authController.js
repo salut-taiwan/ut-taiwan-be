@@ -1,4 +1,7 @@
 const { supabase, supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { users } = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const env = require('../config/env');
 
 function buildProfileInsert(userId, body) {
@@ -54,26 +57,26 @@ async function register(req, res) {
 
   // Supabase returns null user when email already exists (enumeration prevention)
   if (!data.user) {
-    // Try signing in to verify identity and recover orphaned account
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
     if (signInError) {
       return res.status(409).json({ error: 'Email sudah terdaftar.' });
     }
-    // Check if public profile already exists
-    const { data: existing } = await supabaseAdmin.from('users').select('id').eq('id', signInData.user.id).maybeSingle();
+    const existing = await db.query.users.findFirst({
+      columns: { id: true },
+      where: eq(users.id, signInData.user.id),
+    });
     if (existing) {
       return res.status(409).json({ error: 'Email sudah terdaftar, silakan login.' });
     }
     // Orphaned auth user — insert the missing public profile
-    await supabaseAdmin.from('users').insert(buildProfileInsert(signInData.user.id, req.body));
+    await db.insert(users).values(buildProfileInsert(signInData.user.id, req.body));
     await supabase.auth.signOut();
     return res.status(201).json({ message: 'Akun berhasil dipulihkan. Silakan login.' });
   }
 
-  // Create user profile row
-  const { error: profileError } = await supabaseAdmin.from('users').insert(buildProfileInsert(data.user.id, req.body));
-
-  if (profileError) {
+  try {
+    await db.insert(users).values(buildProfileInsert(data.user.id, req.body));
+  } catch (profileError) {
     // Compensate: delete the auth user to avoid orphaned auth account
     await supabaseAdmin.auth.admin.deleteUser(data.user.id);
     return res.status(500).json({ error: 'Gagal membuat profil. Silakan coba lagi.' });
@@ -113,14 +116,17 @@ async function logout(req, res) {
 }
 
 async function getMe(req, res) {
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .select('*, programs(name, code)')
-    .eq('id', req.user.id)
-    .single();
+  try {
+    const data = await db.query.users.findFirst({
+      where: eq(users.id, req.user.id),
+      with: { programs: { columns: { name: true, code: true } } },
+    });
 
-  if (error || !data) return res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
-  res.json(data);
+    if (!data) return res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
+    res.json(data);
+  } catch (err) {
+    res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
+  }
 }
 
 async function updateMe(req, res) {
@@ -135,17 +141,18 @@ async function updateMe(req, res) {
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   }
-  updates.updated_at = new Date().toISOString();
+  updates.updated_at = new Date();
 
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .update(updates)
-    .eq('id', req.user.id)
-    .select()
-    .single();
+  try {
+    const [data] = await db.update(users)
+      .set(updates)
+      .where(eq(users.id, req.user.id))
+      .returning();
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 async function refresh(req, res) {

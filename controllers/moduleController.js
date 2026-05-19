@@ -1,22 +1,42 @@
-const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { modules } = require('../db/schema');
+const { eq, and, asc, isNull, or, ilike, count } = require('drizzle-orm');
 
 async function listModules(req, res) {
   const { page = 1, limit = 20, available } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const pageNum = parseInt(page);
+  const limitNum = parseInt(limit);
+  const offset = (pageNum - 1) * limitNum;
 
-  let query = supabaseAdmin
-    .from('modules')
-    .select('id, tbo_code, name, edition, cover_image_url, price_student, price_general, is_available, has_multimedia', { count: 'exact' })
-    .is('deleted_at', null)
-    .order('tbo_code')
-    .range(offset, offset + parseInt(limit) - 1);
+  try {
+    const whereClause = available === 'true'
+      ? and(isNull(modules.deleted_at), eq(modules.is_available, true))
+      : isNull(modules.deleted_at);
 
-  if (available === 'true') query = query.eq('is_available', true);
+    const [data, [{ total }]] = await Promise.all([
+      db.select({
+        id: modules.id,
+        tbo_code: modules.tbo_code,
+        name: modules.name,
+        edition: modules.edition,
+        cover_image_url: modules.cover_image_url,
+        price_student: modules.price_student,
+        price_general: modules.price_general,
+        is_available: modules.is_available,
+        has_multimedia: modules.has_multimedia,
+      })
+        .from(modules)
+        .where(whereClause)
+        .orderBy(asc(modules.tbo_code))
+        .limit(limitNum)
+        .offset(offset),
+      db.select({ total: count() }).from(modules).where(whereClause),
+    ]);
 
-  const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-
-  res.json({ data, total: count, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ data, total, page: pageNum, limit: limitNum });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function searchModules(req, res) {
@@ -25,33 +45,52 @@ async function searchModules(req, res) {
     return res.status(400).json({ error: 'Query minimal 2 karakter' });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('modules')
-    .select('id, tbo_code, name, edition, cover_image_url, price_student, is_available')
-    .is('deleted_at', null)
-    .or(`tbo_code.ilike.%${q}%,name.ilike.%${q}%`)
-    .order('tbo_code')
-    .limit(50);
+  const term = `%${q}%`;
+  try {
+    const data = await db.select({
+      id: modules.id,
+      tbo_code: modules.tbo_code,
+      name: modules.name,
+      edition: modules.edition,
+      cover_image_url: modules.cover_image_url,
+      price_student: modules.price_student,
+      is_available: modules.is_available,
+    })
+      .from(modules)
+      .where(and(
+        isNull(modules.deleted_at),
+        or(ilike(modules.tbo_code, term), ilike(modules.name, term)),
+      ))
+      .orderBy(asc(modules.tbo_code))
+      .limit(50);
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function getModule(req, res) {
   const { id } = req.params;
-  const { data, error } = await supabaseAdmin
-    .from('modules')
-    .select(`
-      *,
-      subject_modules(
-        subjects(id, code, name, programs(id, code, name))
-      )
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return res.status(404).json({ error: 'Modul tidak ditemukan' });
-  res.json(data);
+  try {
+    const data = await db.query.modules.findFirst({
+      where: eq(modules.id, id),
+      with: {
+        subject_modules: {
+          with: {
+            subjects: {
+              columns: { id: true, code: true, name: true },
+              with: { programs: { columns: { id: true, code: true, name: true } } },
+            },
+          },
+        },
+      },
+    });
+    if (!data) return res.status(404).json({ error: 'Modul tidak ditemukan' });
+    res.json(data);
+  } catch (err) {
+    res.status(404).json({ error: 'Modul tidak ditemukan' });
+  }
 }
 
 async function createModule(req, res) {
@@ -65,9 +104,8 @@ async function createModule(req, res) {
     return res.status(400).json({ error: 'tbo_code, name, price_student, dan price_general wajib diisi' });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('modules')
-    .insert({
+  try {
+    const [data] = await db.insert(modules).values({
       tbo_code: String(tbo_code).toUpperCase().trim(),
       name,
       price_student,
@@ -80,16 +118,13 @@ async function createModule(req, res) {
       is_available: is_available !== undefined ? is_available : true,
       has_multimedia: has_multimedia !== undefined ? has_multimedia : false,
       tbo_url: tbo_url || null,
-    })
-    .select()
-    .single();
+    }).returning();
 
-  if (error) {
-    if (error.code === '23505') return res.status(409).json({ error: 'Kode TBO sudah terdaftar' });
-    return res.status(500).json({ error: error.message });
+    res.status(201).json(data);
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Kode TBO sudah terdaftar' });
+    res.status(500).json({ error: err.message });
   }
-
-  res.status(201).json(data);
 }
 
 module.exports = { listModules, searchModules, getModule, createModule };

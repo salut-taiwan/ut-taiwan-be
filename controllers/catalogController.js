@@ -1,104 +1,120 @@
-const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { faculties, programs, subjects } = require('../db/schema');
+const { eq, asc, and, isNull } = require('drizzle-orm');
 
 async function listFaculties(req, res) {
-  const { data, error } = await supabaseAdmin
-    .from('faculties')
-    .select('id, code, name, description')
-    .order('code');
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const data = await db
+      .select({ id: faculties.id, code: faculties.code, name: faculties.name, description: faculties.description })
+      .from(faculties)
+      .orderBy(asc(faculties.code));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function listProgramsByFaculty(req, res) {
   const { id } = req.params;
-  const { data, error } = await supabaseAdmin
-    .from('programs')
-    .select('id, code, name, level, total_sks')
-    .eq('faculty_id', id)
-    .order('name');
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const data = await db
+      .select({ id: programs.id, code: programs.code, name: programs.name, level: programs.level, total_sks: programs.total_sks })
+      .from(programs)
+      .where(eq(programs.faculty_id, id))
+      .orderBy(asc(programs.name));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function listPrograms(req, res) {
   const { facultyId } = req.query;
-  let query = supabaseAdmin
-    .from('programs')
-    .select('id, faculty_id, code, name, level, total_sks, faculties(code, name)')
-    .order('name');
-
-  if (facultyId) query = query.eq('faculty_id', facultyId);
-
-  const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  try {
+    const data = await db.query.programs.findMany({
+      columns: { id: true, faculty_id: true, code: true, name: true, level: true, total_sks: true },
+      with: { faculties: { columns: { code: true, name: true } } },
+      where: facultyId ? eq(programs.faculty_id, facultyId) : undefined,
+      orderBy: asc(programs.name),
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function getProgram(req, res) {
   const { id } = req.params;
-  const { data, error } = await supabaseAdmin
-    .from('programs')
-    .select('*, faculties(code, name)')
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return res.status(404).json({ error: 'Program tidak ditemukan' });
-  res.json(data);
+  try {
+    const data = await db.query.programs.findFirst({
+      where: eq(programs.id, id),
+      with: { faculties: { columns: { code: true, name: true } } },
+    });
+    if (!data) return res.status(404).json({ error: 'Program tidak ditemukan' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function listSubjects(req, res) {
   const { id } = req.params;
   const { semester } = req.query;
+  try {
+    const whereClause = semester
+      ? and(eq(subjects.program_id, id), eq(subjects.semester_hint, parseInt(semester)))
+      : eq(subjects.program_id, id);
 
-  let query = supabaseAdmin
-    .from('subjects')
-    .select(`
-      id, code, name, sks, exam_period, semester_hint, notes, is_required,
-      subject_modules(
-        sort_order,
-        modules(id, tbo_code, name, cover_image_url, price_student, is_available, deleted_at)
-      )
-    `)
-    .eq('program_id', id)
-    .order('semester_hint', { ascending: true })
-    .order('code', { ascending: true });
+    const data = await db.query.subjects.findMany({
+      columns: { id: true, code: true, name: true, sks: true, exam_period: true, semester_hint: true, notes: true, is_required: true },
+      where: whereClause,
+      orderBy: [asc(subjects.semester_hint), asc(subjects.code)],
+      with: {
+        subject_modules: {
+          columns: { sort_order: true },
+          with: {
+            modules: {
+              columns: { id: true, tbo_code: true, name: true, cover_image_url: true, price_student: true, is_available: true, deleted_at: true },
+            },
+          },
+        },
+      },
+    });
 
-  if (semester) query = query.eq('semester_hint', parseInt(semester));
+    // Strip soft-deleted modules
+    data.forEach(subject => {
+      subject.subject_modules = (subject.subject_modules || [])
+        .filter(sm => sm.modules && !sm.modules.deleted_at)
+        .map(sm => {
+          const { deleted_at, ...moduleRest } = sm.modules;
+          return { ...sm, modules: moduleRest };
+        });
+    });
 
-  const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-
-  // Strip soft-deleted modules before returning to client
-  data?.forEach(subject => {
-    subject.subject_modules = (subject.subject_modules || [])
-      .filter(sm => sm.modules && !sm.modules.deleted_at)
-      .map(sm => {
-        const { deleted_at, ...moduleRest } = sm.modules;
-        return { ...sm, modules: moduleRest };
-      });
-  });
-
-  res.json(data);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 async function getSubject(req, res) {
   const { id } = req.params;
-  const { data, error } = await supabaseAdmin
-    .from('subjects')
-    .select(`
-      *, programs(id, code, name),
-      subject_modules(
-        sort_order,
-        modules(*)
-      )
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return res.status(404).json({ error: 'Mata kuliah tidak ditemukan' });
-  res.json(data);
+  try {
+    const data = await db.query.subjects.findFirst({
+      where: eq(subjects.id, id),
+      with: {
+        programs: true,
+        subject_modules: {
+          columns: { sort_order: true },
+          with: { modules: true },
+        },
+      },
+    });
+    if (!data) return res.status(404).json({ error: 'Mata kuliah tidak ditemukan' });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 module.exports = { listFaculties, listProgramsByFaculty, listPrograms, getProgram, listSubjects, getSubject };

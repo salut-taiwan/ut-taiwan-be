@@ -1,6 +1,10 @@
 const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { cart_items, modules, packages, product_skus } = require('../db/schema');
+const { eq, and, sql } = require('drizzle-orm');
 
 async function getOrCreateCart(userId) {
+  // RPC stays on Supabase client (stored procedure)
   const { data: cartId, error } = await supabaseAdmin.rpc('get_or_create_cart', { p_user_id: userId });
   if (error || !cartId) return null;
   return { id: cartId };
@@ -10,65 +14,76 @@ async function buildCartDTO(userId) {
   const cart = await getOrCreateCart(userId);
   if (!cart) return null;
 
-  const { data, error } = await supabaseAdmin
-    .from('cart_items')
-    .select(`
-      id, quantity, price_snapshot, is_request,
-      sku_id, variant_label, product_name_snapshot,
-      modules(id, tbo_code, name, cover_image_url, price_student, is_available),
-      product_skus(
-        id, price, option_names,
-        products(id, name, product_images(image_url, sort_order))
-      )
-    `)
-    .eq('cart_id', cart.id);
+  try {
+    const data = await db.query.cart_items.findMany({
+      columns: {
+        id: true, quantity: true, price_snapshot: true, is_request: true,
+        sku_id: true, variant_label: true, product_name_snapshot: true,
+      },
+      where: eq(cart_items.cart_id, cart.id),
+      with: {
+        modules: {
+          columns: { id: true, tbo_code: true, name: true, cover_image_url: true, price_student: true, is_available: true },
+        },
+        product_skus: {
+          columns: { id: true, price: true, option_names: true },
+          with: {
+            products: {
+              columns: { id: true, name: true },
+              with: { product_images: { columns: { image_url: true, sort_order: true } } },
+            },
+          },
+        },
+      },
+    });
 
-  if (error) return null;
-
-  const items = data.map(item => {
-    if (item.modules) {
+    const items = data.map(item => {
+      if (item.modules) {
+        return {
+          id: item.id,
+          itemType: 'module',
+          moduleId: item.modules.id,
+          tboCode: item.modules.tbo_code,
+          moduleName: item.modules.name,
+          coverImageUrl: item.modules.cover_image_url,
+          quantity: item.quantity,
+          priceSnapshot: Number(item.price_snapshot),
+          subtotal: Number(item.price_snapshot) * item.quantity,
+          isAvailable: item.modules.is_available,
+          isRequest: item.is_request,
+          isStale: !item.modules.is_available && !item.is_request,
+          isPricePending: item.is_request && !Number(item.price_snapshot),
+        };
+      }
+      // Merchandise item
+      const imgs = (item.product_skus?.products?.product_images || [])
+        .sort((a, b) => a.sort_order - b.sort_order);
       return {
         id: item.id,
-        itemType: 'module',
-        moduleId: item.modules.id,
-        tboCode: item.modules.tbo_code,
-        moduleName: item.modules.name,
-        coverImageUrl: item.modules.cover_image_url,
+        itemType: 'merch',
+        skuId: item.sku_id,
+        variantLabel: item.variant_label,
+        productNameSnapshot: item.product_name_snapshot,
+        coverImageUrl: imgs[0]?.image_url ?? null,
         quantity: item.quantity,
-        priceSnapshot: item.price_snapshot,
-        subtotal: item.price_snapshot * item.quantity,
-        isAvailable: item.modules.is_available,
+        priceSnapshot: Number(item.price_snapshot),
+        subtotal: Number(item.price_snapshot) * item.quantity,
+        isAvailable: true,
         isRequest: item.is_request,
-        isStale: !item.modules.is_available && !item.is_request,
-        isPricePending: item.is_request && !item.price_snapshot,
       };
-    }
-    // Merchandise item
-    const imgs = (item.product_skus?.products?.product_images || [])
-      .sort((a, b) => a.sort_order - b.sort_order);
-    return {
-      id: item.id,
-      itemType: 'merch',
-      skuId: item.sku_id,
-      variantLabel: item.variant_label,
-      productNameSnapshot: item.product_name_snapshot,
-      coverImageUrl: imgs[0]?.image_url ?? null,
-      quantity: item.quantity,
-      priceSnapshot: item.price_snapshot,
-      subtotal: item.price_snapshot * item.quantity,
-      isAvailable: true,
-      isRequest: item.is_request,
-    };
-  });
+    });
 
-  return {
-    id: cart.id,
-    userId,
-    items,
-    subtotal: items.reduce((sum, i) => sum + i.subtotal, 0),
-    itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
-    hasStaleItems: items.some(i => i.isStale),
-  };
+    return {
+      id: cart.id,
+      userId,
+      items,
+      subtotal: items.reduce((sum, i) => sum + i.subtotal, 0),
+      itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
+      hasStaleItems: items.some(i => i.isStale),
+    };
+  } catch (err) {
+    return null;
+  }
 }
 
 async function getCart(req, res) {
@@ -81,76 +96,96 @@ async function addItem(req, res) {
   const { moduleId, quantity = 1 } = req.body;
   if (!moduleId) return res.status(400).json({ error: 'moduleId wajib diisi' });
 
-  // Check module exists and is available
-  const { data: mod } = await supabaseAdmin
-    .from('modules')
-    .select('id, price_student, is_available')
-    .eq('id', moduleId)
-    .is('deleted_at', null)
-    .single();
+  try {
+    const mod = await db.query.modules.findFirst({
+      columns: { id: true, price_student: true, is_available: true, deleted_at: true },
+      where: eq(modules.id, moduleId),
+    });
 
-  if (!mod) return res.status(404).json({ error: 'Modul tidak ditemukan' });
+    if (!mod || mod.deleted_at) return res.status(404).json({ error: 'Modul tidak ditemukan' });
 
-  // No price or out of stock → force-request; price_snapshot never null
-  const priceSnapshot = mod.price_student ?? 0;
-  const isRequest = !mod.is_available || !mod.price_student;
+    const priceSnapshot = mod.price_student ?? 0;
+    const isRequest = !mod.is_available || !mod.price_student;
 
-  const cart = await getOrCreateCart(req.user.id);
+    const cart = await getOrCreateCart(req.user.id);
 
-  const { error } = await supabaseAdmin
-    .from('cart_items')
-    .upsert({
-      cart_id: cart.id,
-      module_id: moduleId,
-      quantity,
-      price_snapshot: priceSnapshot,
-      is_request: isRequest,
-    }, { onConflict: 'cart_id,module_id' });
+    await db.insert(cart_items)
+      .values({
+        cart_id: cart.id,
+        module_id: moduleId,
+        quantity,
+        price_snapshot: priceSnapshot,
+        is_request: isRequest,
+      })
+      .onConflictDoUpdate({
+        target: [cart_items.cart_id, cart_items.module_id],
+        set: {
+          quantity,
+          price_snapshot: priceSnapshot,
+          is_request: isRequest,
+        },
+      });
 
-  if (error) return res.status(400).json({ error: error.message });
-
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.status(201).json(dto);
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.status(201).json(dto);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 async function addPackage(req, res) {
   const { packageId } = req.body;
   if (!packageId) return res.status(400).json({ error: 'packageId wajib diisi' });
 
-  const { data: pkg } = await supabaseAdmin
-    .from('packages')
-    .select('package_modules(modules(id, price_student, is_available))')
-    .eq('id', packageId)
-    .eq('is_active', true)
-    .single();
+  try {
+    const pkg = await db.query.packages.findFirst({
+      where: and(eq(packages.id, packageId), eq(packages.is_active, true)),
+      with: {
+        package_modules: {
+          with: {
+            modules: {
+              columns: { id: true, price_student: true, is_available: true },
+            },
+          },
+        },
+      },
+    });
 
-  if (!pkg) return res.status(404).json({ error: 'Paket tidak ditemukan' });
+    if (!pkg) return res.status(404).json({ error: 'Paket tidak ditemukan' });
 
-  const cart = await getOrCreateCart(req.user.id);
-  const cartItems = (pkg.package_modules || [])
-    .filter(pm => pm.modules)
-    .map(pm => ({
-      cart_id: cart.id,
-      module_id: pm.modules.id,
-      quantity: 1,
-      price_snapshot: pm.modules.price_student ?? 0,
-      is_request: !pm.modules.is_available || !pm.modules.price_student,
-    }));
+    const cart = await getOrCreateCart(req.user.id);
+    const items = (pkg.package_modules || [])
+      .filter(pm => pm.modules)
+      .map(pm => ({
+        cart_id: cart.id,
+        module_id: pm.modules.id,
+        quantity: 1,
+        price_snapshot: pm.modules.price_student ?? 0,
+        is_request: !pm.modules.is_available || !pm.modules.price_student,
+      }));
 
-  if (cartItems.length === 0) {
-    return res.status(400).json({ error: 'Tidak ada modul dalam paket ini' });
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Tidak ada modul dalam paket ini' });
+    }
+
+    await db.insert(cart_items)
+      .values(items)
+      .onConflictDoUpdate({
+        target: [cart_items.cart_id, cart_items.module_id],
+        set: {
+          quantity: sql`excluded.quantity`,
+          price_snapshot: sql`excluded.price_snapshot`,
+          is_request: sql`excluded.is_request`,
+        },
+      });
+
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.json(dto);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
-
-  const { error } = await supabaseAdmin
-    .from('cart_items')
-    .upsert(cartItems, { onConflict: 'cart_id,module_id' });
-
-  if (error) return res.status(400).json({ error: error.message });
-
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.json(dto);
 }
 
 async function updateItem(req, res) {
@@ -162,128 +197,133 @@ async function updateItem(req, res) {
     return removeItem(req, res);
   }
 
-  const cart = await getOrCreateCart(req.user.id);
+  try {
+    const cart = await getOrCreateCart(req.user.id);
 
-  const { data, error } = await supabaseAdmin
-    .from('cart_items')
-    .update({ quantity })
-    .eq('id', itemId)
-    .eq('cart_id', cart.id)
-    .select('id')
-    .single();
+    const [data] = await db.update(cart_items)
+      .set({ quantity })
+      .where(and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)))
+      .returning({ id: cart_items.id });
 
-  if (error || !data) return res.status(404).json({ error: 'Item tidak ditemukan' });
+    if (!data) return res.status(404).json({ error: 'Item tidak ditemukan' });
 
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.json(dto);
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.json(dto);
+  } catch (err) {
+    res.status(404).json({ error: 'Item tidak ditemukan' });
+  }
 }
 
 async function removeItem(req, res) {
   const { itemId } = req.params;
-  const cart = await getOrCreateCart(req.user.id);
+  try {
+    const cart = await getOrCreateCart(req.user.id);
 
-  const { error } = await supabaseAdmin
-    .from('cart_items')
-    .delete()
-    .eq('id', itemId)
-    .eq('cart_id', cart.id);
+    await db.delete(cart_items)
+      .where(and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)));
 
-  if (error) return res.status(400).json({ error: error.message });
-
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.json(dto);
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.json(dto);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 async function clearCart(req, res) {
-  const cart = await getOrCreateCart(req.user.id);
-
-  const { error } = await supabaseAdmin
-    .from('cart_items')
-    .delete()
-    .eq('cart_id', cart.id);
-
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: 'Keranjang berhasil dikosongkan' });
+  try {
+    const cart = await getOrCreateCart(req.user.id);
+    await db.delete(cart_items).where(eq(cart_items.cart_id, cart.id));
+    res.json({ message: 'Keranjang berhasil dikosongkan' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 async function convertItemToRequest(req, res) {
   const { itemId } = req.params;
-  const cart = await getOrCreateCart(req.user.id);
+  try {
+    const cart = await getOrCreateCart(req.user.id);
 
-  // Verify the cart item exists and get its module_id
-  const { data: cartItem } = await supabaseAdmin
-    .from('cart_items')
-    .select('id, module_id')
-    .eq('id', itemId)
-    .eq('cart_id', cart.id)
-    .single();
+    const cartItem = await db.query.cart_items.findFirst({
+      columns: { id: true, module_id: true },
+      where: and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)),
+    });
 
-  if (!cartItem) return res.status(404).json({ error: 'Item tidak ditemukan' });
+    if (!cartItem) return res.status(404).json({ error: 'Item tidak ditemukan' });
 
-  // Re-check module availability — only convert if still unavailable
-  const { data: mod } = await supabaseAdmin
-    .from('modules')
-    .select('is_available')
-    .eq('id', cartItem.module_id)
-    .single();
+    const mod = await db.query.modules.findFirst({
+      columns: { is_available: true },
+      where: eq(modules.id, cartItem.module_id),
+    });
 
-  if (mod?.is_available) {
-    return res.status(400).json({ error: 'Modul sudah tersedia kembali, tidak perlu dijadikan permintaan' });
+    if (mod?.is_available) {
+      return res.status(400).json({ error: 'Modul sudah tersedia kembali, tidak perlu dijadikan permintaan' });
+    }
+
+    const [data] = await db.update(cart_items)
+      .set({ is_request: true })
+      .where(and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)))
+      .returning({ id: cart_items.id });
+
+    if (!data) return res.status(404).json({ error: 'Item tidak ditemukan' });
+
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.json(dto);
+  } catch (err) {
+    res.status(404).json({ error: 'Item tidak ditemukan' });
   }
-
-  const { data, error } = await supabaseAdmin
-    .from('cart_items')
-    .update({ is_request: true })
-    .eq('id', itemId)
-    .eq('cart_id', cart.id)
-    .select('id')
-    .single();
-
-  if (error || !data) return res.status(404).json({ error: 'Item tidak ditemukan' });
-
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.json(dto);
 }
 
 async function addMerch(req, res) {
   const { skuId, quantity = 1 } = req.body;
   if (!skuId) return res.status(400).json({ error: 'skuId wajib diisi' });
 
-  const { data: sku } = await supabaseAdmin
-    .from('product_skus')
-    .select('id, price, option_names, products(id, name)')
-    .eq('id', skuId)
-    .single();
+  try {
+    const sku = await db.query.product_skus.findFirst({
+      columns: { id: true, price: true, option_names: true },
+      where: eq(product_skus.id, skuId),
+      with: { products: { columns: { id: true, name: true } } },
+    });
 
-  if (!sku) return res.status(404).json({ error: 'SKU tidak ditemukan' });
+    if (!sku) return res.status(404).json({ error: 'SKU tidak ditemukan' });
 
-  const variantLabel = Array.isArray(sku.option_names) && sku.option_names.length > 0
-    ? sku.option_names.join(' / ')
-    : null;
+    const variantLabel = Array.isArray(sku.option_names) && sku.option_names.length > 0
+      ? sku.option_names.join(' / ')
+      : null;
 
-  const cart = await getOrCreateCart(req.user.id);
+    const cart = await getOrCreateCart(req.user.id);
+    const qty = Math.max(1, parseInt(quantity) || 1);
 
-  const { error } = await supabaseAdmin
-    .from('cart_items')
-    .upsert({
-      cart_id: cart.id,
-      module_id: null,
-      sku_id: skuId,
-      quantity: Math.max(1, parseInt(quantity) || 1),
-      price_snapshot: sku.price,
-      variant_label: variantLabel,
-      product_name_snapshot: sku.products.name,
-      is_request: false,
-    }, { onConflict: 'cart_id,sku_id' });
+    await db.insert(cart_items)
+      .values({
+        cart_id: cart.id,
+        module_id: null,
+        sku_id: skuId,
+        quantity: qty,
+        price_snapshot: sku.price,
+        variant_label: variantLabel,
+        product_name_snapshot: sku.products.name,
+        is_request: false,
+      })
+      .onConflictDoUpdate({
+        target: [cart_items.cart_id, cart_items.sku_id],
+        set: {
+          quantity: qty,
+          price_snapshot: sku.price,
+          variant_label: variantLabel,
+          product_name_snapshot: sku.products.name,
+        },
+      });
 
-  if (error) return res.status(400).json({ error: error.message });
-
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.status(201).json(dto);
+    const dto = await buildCartDTO(req.user.id);
+    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+    res.status(201).json(dto);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 }
 
 module.exports = { getCart, addItem, addPackage, updateItem, removeItem, clearCart, convertItemToRequest, addMerch };

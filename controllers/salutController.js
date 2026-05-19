@@ -1,6 +1,8 @@
 const { supabaseAdmin } = require('../config/supabase');
+const { db } = require('../db');
+const { users } = require('../db/schema');
+const { eq } = require('drizzle-orm');
 const { v4: uuid } = require('uuid');
-const path = require('path');
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -40,45 +42,54 @@ async function applyForMembership(req, res) {
     return res.status(400).json({ error: 'URL bukti pembayaran wajib diisi' });
   }
 
-  // Load current user status
-  const { data: user, error: fetchError } = await supabaseAdmin
-    .from('users')
-    .select('is_salut, salut_status')
-    .eq('id', req.user.id)
-    .single();
+  try {
+    const user = await db.query.users.findFirst({
+      columns: { is_salut: true, salut_status: true },
+      where: eq(users.id, req.user.id),
+    });
 
-  if (fetchError || !user) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    if (!user) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
 
-  if (user.is_salut || user.salut_status === 'approved') {
-    return res.status(400).json({ error: 'Anda sudah menjadi anggota SALUT' });
+    if (user.is_salut || user.salut_status === 'approved') {
+      return res.status(400).json({ error: 'Anda sudah menjadi anggota SALUT' });
+    }
+    if (user.salut_status === 'pending') {
+      return res.status(400).json({ error: 'Permohonan Anda sedang dalam proses verifikasi' });
+    }
+
+    await db.update(users)
+      .set({
+        salut_status: 'pending',
+        salut_applied_at: new Date(),
+        salut_payment_proof_url: proofUrl.trim(),
+        salut_rejection_reason: null,
+      })
+      .where(eq(users.id, req.user.id));
+
+    res.json({ message: 'Permohonan berhasil dikirim' });
+  } catch (err) {
+    res.status(500).json({ error: 'Gagal mengirim permohonan' });
   }
-  if (user.salut_status === 'pending') {
-    return res.status(400).json({ error: 'Permohonan Anda sedang dalam proses verifikasi' });
-  }
-
-  const { error: updateError } = await supabaseAdmin
-    .from('users')
-    .update({
-      salut_status: 'pending',
-      salut_applied_at: new Date().toISOString(),
-      salut_payment_proof_url: proofUrl.trim(),
-      salut_rejection_reason: null,
-    })
-    .eq('id', req.user.id);
-
-  if (updateError) return res.status(500).json({ error: 'Gagal mengirim permohonan' });
-  res.json({ message: 'Permohonan berhasil dikirim' });
 }
 
 async function getApplicationStatus(req, res) {
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .select('is_salut, salut_status, salut_applied_at, salut_rejection_reason, salut_approved_at')
-    .eq('id', req.user.id)
-    .single();
+  try {
+    const data = await db.query.users.findFirst({
+      columns: {
+        is_salut: true,
+        salut_status: true,
+        salut_applied_at: true,
+        salut_rejection_reason: true,
+        salut_approved_at: true,
+      },
+      where: eq(users.id, req.user.id),
+    });
 
-  if (error || !data) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
-  res.json(data);
+    if (!data) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    res.json(data);
+  } catch (err) {
+    res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+  }
 }
 
 module.exports = { uploadProof, applyForMembership, getApplicationStatus };
