@@ -38,12 +38,16 @@ async function updateUserSalut(req, res) {
     return res.status(400).json({ error: 'is_salut must be a boolean' });
   }
 
+  const salutStatusFields = is_salut
+    ? { salut_status: 'approved', salut_approved_at: new Date().toISOString() }
+    : { salut_status: 'none', salut_approved_at: null, salut_rejection_reason: null };
+
   const { data, error } = await supabaseAdmin
     .from('users')
-    .update({ is_salut })
+    .update({ is_salut, ...salutStatusFields })
     .eq('id', userId)
     .eq('role', 'student')
-    .select('id, email, name, nim, is_salut')
+    .select('id, email, name, nim, is_salut, salut_status')
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -64,9 +68,13 @@ async function bulkUpdateUserSalut(req, res) {
     return res.status(400).json({ error: 'is_salut must be a boolean' });
   }
 
+  const salutStatusFields = is_salut
+    ? { salut_status: 'approved', salut_approved_at: new Date().toISOString() }
+    : { salut_status: 'none', salut_approved_at: null, salut_rejection_reason: null };
+
   const { data, error } = await supabaseAdmin
     .from('users')
-    .update({ is_salut })
+    .update({ is_salut, ...salutStatusFields })
     .in('id', userIds)
     .eq('role', 'student')
     .select('id');
@@ -75,4 +83,113 @@ async function bulkUpdateUserSalut(req, res) {
   res.json({ updated: data?.length ?? 0 });
 }
 
-module.exports = { listUsers, updateUserSalut, bulkUpdateUserSalut };
+async function listSalutApplications(req, res) {
+  const { status } = req.query;
+
+  let query = supabaseAdmin
+    .from('users')
+    .select('id, email, name, nim, current_semester, salut_applied_at, salut_payment_proof_url, programs(code, name)')
+    .eq('role', 'student')
+    .order('salut_applied_at', { ascending: true });
+
+  if (status === 'all') {
+    query = query.neq('salut_status', 'none');
+  } else {
+    query = query.eq('salut_status', 'pending');
+  }
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+}
+
+async function getSalutProofUrl(req, res) {
+  const { userId } = req.params;
+
+  const { data: user, error: fetchError } = await supabaseAdmin
+    .from('users')
+    .select('salut_payment_proof_url, salut_status')
+    .eq('id', userId)
+    .eq('role', 'student')
+    .single();
+
+  if (fetchError || !user) return res.status(404).json({ error: 'User not found' });
+  if (!user.salut_payment_proof_url) return res.status(404).json({ error: 'No proof uploaded' });
+
+  const { data, error } = await supabaseAdmin.storage
+    .from('salut-proofs')
+    .createSignedUrl(user.salut_payment_proof_url, 300); // 5-minute TTL
+
+  if (error) return res.status(500).json({ error: 'Gagal membuat URL' });
+  res.json({ signedUrl: data.signedUrl });
+}
+
+async function approveSalutApplication(req, res) {
+  const { userId } = req.params;
+
+  const { data: user, error: fetchError } = await supabaseAdmin
+    .from('users')
+    .select('salut_status')
+    .eq('id', userId)
+    .eq('role', 'student')
+    .single();
+
+  if (fetchError || !user) return res.status(404).json({ error: 'User not found' });
+  if (user.salut_status !== 'pending') {
+    return res.status(400).json({ error: 'Permohonan bukan dalam status pending' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .update({ is_salut: true, salut_status: 'approved', salut_approved_at: new Date().toISOString() })
+    .eq('id', userId)
+    .select('id, email, name, nim, is_salut, salut_status')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+}
+
+async function rejectSalutApplication(req, res) {
+  const { userId } = req.params;
+  const { reason } = req.body;
+
+  if (!reason || typeof reason !== 'string' || !reason.trim()) {
+    return res.status(400).json({ error: 'Alasan penolakan wajib diisi' });
+  }
+  if (reason.trim().length > 500) {
+    return res.status(400).json({ error: 'Alasan maksimal 500 karakter' });
+  }
+
+  const { data: user, error: fetchError } = await supabaseAdmin
+    .from('users')
+    .select('salut_status')
+    .eq('id', userId)
+    .eq('role', 'student')
+    .single();
+
+  if (fetchError || !user) return res.status(404).json({ error: 'User not found' });
+  if (user.salut_status !== 'pending') {
+    return res.status(400).json({ error: 'Permohonan bukan dalam status pending' });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('users')
+    .update({ salut_status: 'rejected', salut_rejection_reason: reason.trim() })
+    .eq('id', userId)
+    .select('id, email, name, nim, is_salut, salut_status')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+}
+
+module.exports = {
+  listUsers,
+  updateUserSalut,
+  bulkUpdateUserSalut,
+  listSalutApplications,
+  getSalutProofUrl,
+  approveSalutApplication,
+  rejectSalutApplication,
+};
