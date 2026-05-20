@@ -1,7 +1,9 @@
 const { SALUT_FEES, SALUT_MEMBERSHIP } = require('../config/constants');
+const { presentFees } = require('../presenters/feesPresenter');
+const { listBanks } = require('../config/banks');
 
 function getFees(req, res) {
-  res.json({
+  const raw = {
     salutMembership: {
       currency: SALUT_MEMBERSHIP.CURRENCY,
       new: SALUT_MEMBERSHIP.PRICE_NEW,
@@ -21,7 +23,17 @@ function getFees(req, res) {
     ],
     totalServiceFees: SALUT_FEES.ONGKIR + SALUT_FEES.BOX + SALUT_FEES.ADMIN,
     serviceFeesCurrency: 'IDR',
-  });
+  };
+  res.json(presentFees(raw));
 }
 
-module.exports = { getFees };
+function getBanks(req, res) {
+  const currency = String(req.query.currency || '').toUpperCase();
+  if (currency !== 'NTD' && currency !== 'IDR') {
+    return res.status(400).json({ error: "Query 'currency' wajib diisi: NTD atau IDR" });
+  }
+  const banks = listBanks(currency);
+  res.json({ currency, banks });
+}
+
+module.exports = { getFees, getBanks };

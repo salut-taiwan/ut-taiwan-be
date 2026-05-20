@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { products } = require('../db/schema');
 const { eq, asc } = require('drizzle-orm');
+const { presentProduct, presentProductList } = require('../presenters/productPresenter');
 
 async function listProducts(req, res) {
   const { category } = req.query;
@@ -29,7 +30,7 @@ async function listProducts(req, res) {
         cover_image_url: images[0]?.image_url ?? null,
       };
     });
-    res.json(result);
+    res.json(presentProductList(result));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -70,7 +71,7 @@ async function getProduct(req, res) {
         })),
     };
 
-    res.json(product);
+    res.json(presentProduct(product));
   } catch (err) {
     res.status(404).json({ error: 'Produk tidak ditemukan' });
   }

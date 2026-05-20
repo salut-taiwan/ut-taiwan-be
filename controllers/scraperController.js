@@ -2,6 +2,7 @@ const { db } = require('../db');
 const { scraper_runs, module_history } = require('../db/schema');
 const { eq, desc } = require('drizzle-orm');
 const scraperService = require('../services/scraperService');
+const { formatDate } = require('../format');
 
 async function isScraperRunning() {
   const [row] = await db
@@ -59,7 +60,11 @@ async function listRuns(req, res) {
       .orderBy(desc(scraper_runs.started_at))
       .limit(50);
 
-    res.json(data);
+    res.json(data.map((r) => ({
+      ...r,
+      started_at_display: formatDate(r.started_at),
+      finished_at_display: formatDate(r.finished_at),
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -81,7 +86,17 @@ async function getRun(req, res) {
       with: { modules: { columns: { tbo_code: true, name: true } } },
     });
 
-    res.json({ run, changes });
+    res.json({
+      run: {
+        ...run,
+        started_at_display: formatDate(run.started_at),
+        finished_at_display: formatDate(run.finished_at),
+      },
+      changes: changes.map(c => ({
+        ...c,
+        changed_at_display: formatDate(c.changed_at),
+      })),
+    });
   } catch (err) {
     res.status(404).json({ error: 'Log scraper tidak ditemukan' });
   }

@@ -3,6 +3,7 @@ const { db } = require('../db');
 const { orders, payments, users } = require('../db/schema');
 const { eq, and, desc } = require('drizzle-orm');
 const orderEmailService = require('../services/orderEmailService');
+const { presentPayment } = require('../presenters/paymentPresenter');
 
 
 async function confirmPayment(req, res) {
@@ -35,7 +36,7 @@ async function getPaymentStatus(req, res) {
       .limit(1);
 
     if (!data) return res.status(404).json({ error: 'Data pembayaran tidak ditemukan' });
-    res.json(data);
+    res.json(presentPayment(data));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

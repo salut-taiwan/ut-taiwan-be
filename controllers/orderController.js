@@ -6,6 +6,12 @@ const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
 const orderEmailService = require('../services/orderEmailService');
 const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK, SALUT_FEES, isSalutActive } = require('../config/constants');
+const {
+  presentOrderDetail,
+  presentOrderListItem,
+  presentAdminOrder,
+} = require('../presenters/orderPresenter');
+const { composeShippingAddressLine } = require('../format');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -16,10 +22,35 @@ function generateOrderNumber() {
 
 async function checkout(req, res) {
   const {
-    shippingName, shippingAddress, shippingCity, shippingProvince,
-    shippingPostal, shippingCountry, shippingPhone, notes,
+    // Legacy flat fields (kept for backward compat during migration)
+    shippingName: bodyShippingName, shippingAddress: bodyShippingAddress,
+    shippingCity: bodyShippingCity, shippingProvince, shippingPostal: bodyShippingPostal,
+    shippingCountry, shippingPhone: bodyShippingPhone, notes,
     paymentMethod, paymentBank, customItems,
+    // New structured Mandarin address fields (preferred)
+    shipping_name, shipping_zh_road, shipping_zh_number, shipping_zh_floor,
+    shipping_zh_city, shipping_zh_district, shipping_postal, shipping_phone,
   } = req.body;
+
+  // Precedence: structured zh_* fields if present, else flat (back-compat)
+  let shippingName, shippingAddress, shippingCity, shippingPostal, shippingPhone;
+  if (shipping_zh_road || shipping_zh_city) {
+    shippingName    = shipping_name;
+    shippingAddress = composeShippingAddressLine({
+      zh_road: shipping_zh_road,
+      zh_number: shipping_zh_number,
+      zh_floor: shipping_zh_floor,
+    });
+    shippingCity    = [shipping_zh_district, shipping_zh_city].filter(Boolean).join('');
+    shippingPostal  = shipping_postal;
+    shippingPhone   = shipping_phone;
+  } else {
+    shippingName    = bodyShippingName;
+    shippingAddress = bodyShippingAddress;
+    shippingCity    = bodyShippingCity;
+    shippingPostal  = bodyShippingPostal;
+    shippingPhone   = bodyShippingPhone;
+  }
 
   // Validate required fields
   const required = { shippingName, shippingAddress, shippingCity, shippingProvince, shippingPostal, shippingPhone, paymentMethod };
@@ -190,7 +221,7 @@ async function listOrders(req, res) {
         payments: { columns: { status: true, amount: true } },
       },
     });
-    res.json(data);
+    res.json(data.map(presentOrderListItem));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -206,15 +237,7 @@ async function getOrder(req, res) {
 
     if (!order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
 
-    order.step_index = ORDER_STEPS.indexOf(order.status);
-    order.can_cancel = order.status === 'pending';
-
-    if (order.status === 'shipped' && order.shipped_at) {
-      const deadlineMs = new Date(order.shipped_at).getTime() + CONFIRM_DEADLINE_MS;
-      order.confirm_deadline = new Date(deadlineMs).toISOString();
-      order.confirm_deadline_is_urgent = (deadlineMs - Date.now()) / (1000 * 60 * 60 * 24) < 2;
-    }
-
+    // Payment display flags + bank details (controller-only — not in presenter)
     if (order.payments?.length) {
       const p = order.payments[0];
       p.show_payment_instructions = p.status === 'pending' && order.status === 'awaiting_payment';
@@ -226,6 +249,7 @@ async function getOrder(req, res) {
       }
     }
 
+    // Item display_status derivation (kept here — it's pre-presenter business logic)
     if (order.order_items?.length) {
       order.order_items = order.order_items.map(item => ({
         ...item,
@@ -237,7 +261,7 @@ async function getOrder(req, res) {
       }));
     }
 
-    res.json(order);
+    res.json(presentOrderDetail(order));
   } catch (err) {
     res.status(404).json({ error: 'Pesanan tidak ditemukan' });
   }
@@ -278,7 +302,7 @@ async function listAllOrders(req, res) {
         order_items: { columns: { id: true, module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true, is_request: true, request_status: true } },
       },
     });
-    res.json(data);
+    res.json(data.map(presentAdminOrder));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

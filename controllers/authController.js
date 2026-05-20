@@ -4,6 +4,8 @@ const { users } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const env = require('../config/env');
 const { isSalutActive } = require('./../config/constants');
+const { presentUser } = require('../presenters/userPresenter');
+const { getBankName } = require('../config/banks');
 
 function buildProfileInsert(userId, body) {
   const {
@@ -52,6 +54,18 @@ async function register(req, res) {
   const idrComplete = bank_idr_name && bank_idr_account;
   if (!ntdComplete && !idrComplete) {
     return res.status(400).json({ error: 'Wajib mengisi minimal satu rekening bank (NTD atau IDR)' });
+  }
+
+  // Validate bank codes/names against canonical list (backend is sole validator)
+  if (bank_ntd_code) {
+    const resolved = getBankName(bank_ntd_code, 'NTD');
+    if (!resolved) return res.status(400).json({ error: 'Kode bank NTD tidak dikenal' });
+    // Backend resolves canonical name from code; ignore client-supplied bank_ntd_name
+    req.body.bank_ntd_name = resolved;
+  }
+  if (bank_idr_name) {
+    const resolved = getBankName(bank_idr_name, 'IDR');
+    if (!resolved) return res.status(400).json({ error: 'Nama bank IDR tidak dikenal' });
   }
 
   const { data, error } = await supabase.auth.signUp({
@@ -133,11 +147,11 @@ async function getMe(req, res) {
     // Mask a stale 'approved' (from a past May-1 cycle) as 'expired' so the frontend
     // doesn't have to replicate the date math everywhere.
     const effectiveStatus = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
-    res.json({
+    res.json(presentUser({
       ...data,
       is_salut_active: active,
       salut_status: effectiveStatus,
-    });
+    }));
   } catch (err) {
     res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
   }
@@ -155,6 +169,16 @@ async function updateMe(req, res) {
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   }
+  // Validate bank codes/names against canonical list
+  if (updates.bank_ntd_code) {
+    const resolved = getBankName(updates.bank_ntd_code, 'NTD');
+    if (!resolved) return res.status(400).json({ error: 'Kode bank NTD tidak dikenal' });
+    updates.bank_ntd_name = resolved;
+  }
+  if (updates.bank_idr_name) {
+    const resolved = getBankName(updates.bank_idr_name, 'IDR');
+    if (!resolved) return res.status(400).json({ error: 'Nama bank IDR tidak dikenal' });
+  }
   updates.updated_at = new Date();
 
   try {
@@ -163,7 +187,10 @@ async function updateMe(req, res) {
       .where(eq(users.id, req.user.id))
       .returning();
 
-    res.json(data);
+    // Match getMe() shape so the post-edit re-render has all _display fields.
+    const active = isSalutActive(data.salut_approved_at);
+    const masked = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
+    res.json(presentUser({ ...data, is_salut_active: active, salut_status: masked }));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

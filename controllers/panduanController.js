@@ -1,3 +1,5 @@
+const { rewriteStorageUrl } = require('../format');
+
 const BASE = `${process.env.SUPABASE_URL}/storage/v1/object/public/panduan`;
 
 const CATEGORIES = [
@@ -46,7 +48,10 @@ const CATEGORIES = [
 function getCategories(req, res) {
   const categories = CATEGORIES.map(cat => ({
     id: cat.id,
-    guides: cat.guides.map(g => ({ title: g.title, url: `${BASE}/${g.file}` })),
+    guides: cat.guides.map(g => ({
+      title: g.title,
+      url: rewriteStorageUrl(`${BASE}/${g.file}`),
+    })),
   }));
   res.json(categories);
 }

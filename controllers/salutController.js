@@ -9,6 +9,7 @@ const {
   nextSalutExpiry,
   isSalutActive,
 } = require('../config/constants');
+const { presentSalutStatus } = require('../presenters/salutPresenter');
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -120,19 +121,20 @@ async function getApplicationStatus(req, res) {
         salut_approved_at: true,
         salut_applied_fee_amount: true,
         salut_applied_semester: true,
+        current_semester: true,
       },
       where: eq(users.id, req.user.id),
     });
 
     if (!data) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
     const active = isSalutActive(data.salut_approved_at);
-    const effectiveStatus = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
-    res.json({
+    const masked = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
+    res.json(presentSalutStatus({
       ...data,
       is_salut_active: active,
-      salut_status: effectiveStatus,
+      salut_status: masked,
       renewalPolicy: RENEWAL_POLICY_PAYLOAD,
-    });
+    }));
   } catch (err) {
     res.status(404).json({ error: 'Pengguna tidak ditemukan' });
   }

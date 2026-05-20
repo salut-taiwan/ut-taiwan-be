@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { modules } = require('../db/schema');
 const { eq, and, asc, isNull, or, ilike, count } = require('drizzle-orm');
+const { presentModule, presentModuleList } = require('../presenters/modulePresenter');
 
 async function listModules(req, res) {
   const { page = 1, limit = 20, available } = req.query;
@@ -33,7 +34,7 @@ async function listModules(req, res) {
       db.select({ total: count() }).from(modules).where(whereClause),
     ]);
 
-    res.json({ data, total, page: pageNum, limit: limitNum });
+    res.json({ data: presentModuleList(data), total, page: pageNum, limit: limitNum });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -64,7 +65,7 @@ async function searchModules(req, res) {
       .orderBy(asc(modules.tbo_code))
       .limit(50);
 
-    res.json(data);
+    res.json(presentModuleList(data));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -87,7 +88,7 @@ async function getModule(req, res) {
       },
     });
     if (!data) return res.status(404).json({ error: 'Modul tidak ditemukan' });
-    res.json(data);
+    res.json(presentModule(data));
   } catch (err) {
     res.status(404).json({ error: 'Modul tidak ditemukan' });
   }
@@ -120,7 +121,7 @@ async function createModule(req, res) {
       tbo_url: tbo_url || null,
     }).returning();
 
-    res.status(201).json(data);
+    res.status(201).json(presentModule(data));
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Kode TBO sudah terdaftar' });
     res.status(500).json({ error: err.message });

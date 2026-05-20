@@ -4,6 +4,7 @@ const { users } = require('../db/schema');
 const { eq, and, ne, or, ilike, inArray, asc, desc } = require('drizzle-orm');
 const emailService = require('../services/emailService');
 const { nextSalutExpiry } = require('../config/constants');
+const { formatDate, formatNTD } = require('../format');
 
 const ALLOWED_SORT_COLS = new Set(['name', 'nim', 'created_at']);
 
@@ -38,7 +39,10 @@ async function listUsers(req, res) {
       with: { programs: { columns: { code: true, name: true } } },
     });
 
-    res.json(data);
+    res.json(data.map((u) => ({
+      ...u,
+      created_at_display: formatDate(u.created_at),
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -127,7 +131,13 @@ async function listSalutApplications(req, res) {
       with: { programs: { columns: { code: true, name: true } } },
     });
 
-    res.json(data);
+    res.json(data.map((u) => ({
+      ...u,
+      salut_applied_at_display: formatDate(u.salut_applied_at),
+      salut_applied_fee_amount_display: u.salut_applied_fee_amount != null
+        ? formatNTD(Number(u.salut_applied_fee_amount))
+        : null,
+    })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

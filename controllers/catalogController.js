@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { faculties, programs, subjects } = require('../db/schema');
 const { eq, asc, and, isNull } = require('drizzle-orm');
+const { presentModule } = require('../presenters/modulePresenter');
 
 async function listFaculties(req, res) {
   try {
@@ -29,12 +30,21 @@ async function listProgramsByFaculty(req, res) {
 }
 
 async function listPrograms(req, res) {
-  const { facultyId } = req.query;
+  const { facultyId, facultyCode } = req.query;
   try {
+    let resolvedFacultyId = facultyId;
+    if (!resolvedFacultyId && facultyCode) {
+      const fac = await db.query.faculties.findFirst({
+        columns: { id: true },
+        where: eq(faculties.code, String(facultyCode)),
+      });
+      if (!fac) return res.status(404).json({ error: 'Fakultas tidak ditemukan' });
+      resolvedFacultyId = fac.id;
+    }
     const data = await db.query.programs.findMany({
       columns: { id: true, faculty_id: true, code: true, name: true, level: true, total_sks: true },
       with: { faculties: { columns: { code: true, name: true } } },
-      where: facultyId ? eq(programs.faculty_id, facultyId) : undefined,
+      where: resolvedFacultyId ? eq(programs.faculty_id, resolvedFacultyId) : undefined,
       orderBy: asc(programs.name),
     });
     res.json(data);
@@ -81,13 +91,13 @@ async function listSubjects(req, res) {
       },
     });
 
-    // Strip soft-deleted modules
+    // Strip soft-deleted modules and apply storage URL rewriting + price displays
     data.forEach(subject => {
       subject.subject_modules = (subject.subject_modules || [])
         .filter(sm => sm.modules && !sm.modules.deleted_at)
         .map(sm => {
           const { deleted_at, ...moduleRest } = sm.modules;
-          return { ...sm, modules: moduleRest };
+          return { ...sm, modules: presentModule(moduleRest) };
         });
     });
 
@@ -111,6 +121,11 @@ async function getSubject(req, res) {
       },
     });
     if (!data) return res.status(404).json({ error: 'Mata kuliah tidak ditemukan' });
+    // Apply module display fields to nested modules
+    data.subject_modules = (data.subject_modules || []).map((sm) => ({
+      ...sm,
+      modules: sm.modules ? presentModule(sm.modules) : null,
+    }));
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { packages, package_modules, subjects, subject_modules } = require('../db/schema');
 const { eq, and, asc, inArray } = require('drizzle-orm');
+const { presentPackage } = require('../presenters/packagePresenter');
 
 async function listPackages(req, res) {
   const { programId, semester } = req.query;
@@ -26,7 +27,7 @@ async function listPackages(req, res) {
       },
     });
 
-    const result = data.map(pkg => ({
+    const result = data.map(pkg => presentPackage({
       ...pkg,
       totalPrice: (pkg.package_modules || []).reduce((sum, pm) => sum + Number(pm.modules?.price_student || 0), 0),
     }));
@@ -59,7 +60,7 @@ async function getPackage(req, res) {
     data.totalPrice = (data.package_modules || []).reduce(
       (sum, pm) => sum + Number(pm.modules?.price_student || 0), 0,
     );
-    res.json(data);
+    res.json(presentPackage(data));
   } catch (err) {
     res.status(404).json({ error: 'Paket tidak ditemukan' });
   }

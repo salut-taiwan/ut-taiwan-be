@@ -51,15 +51,6 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api', limiter);
-
 // Middleware
 app.use(logger('dev'));
 app.use(express.json());
@@ -67,7 +58,21 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Routes
+// Storage proxy — mounted BEFORE the rate limiter so catalog/product image
+// loads (30+ per page) don't burn the 200-req/15min budget meant for data
+// routes. The upstream URL is anchored to SUPABASE_URL — no SSRF risk.
+app.use('/api/storage', require('./routes/storage'));
+
+// Rate limiting (applied only to data routes below)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Routes (limiter applied per route group to exclude /api/storage)
+app.use('/api', limiter);
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/catalog', require('./routes/catalog'));
 app.use('/api/modules', require('./routes/modules'));

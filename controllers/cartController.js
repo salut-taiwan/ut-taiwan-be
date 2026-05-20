@@ -1,7 +1,24 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { db } = require('../db');
-const { cart_items, modules, packages, product_skus } = require('../db/schema');
+const { cart_items, modules, packages, product_skus, users } = require('../db/schema');
 const { eq, and, sql } = require('drizzle-orm');
+const { presentCart } = require('../presenters/cartPresenter');
+const { isSalutActive } = require('../config/constants');
+
+async function getUserSalutActive(userId) {
+  const u = await db.query.users.findFirst({
+    columns: { salut_approved_at: true },
+    where: eq(users.id, userId),
+  });
+  return isSalutActive(u?.salut_approved_at);
+}
+
+async function respondWithCart(req, res, status = 200) {
+  const dto = await buildCartDTO(req.user.id);
+  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
+  const active = await getUserSalutActive(req.user.id);
+  return res.status(status).json(presentCart(dto, { isSalutActive: active }));
+}
 
 async function getOrCreateCart(userId) {
   // RPC stays on Supabase client (stored procedure)
@@ -87,9 +104,7 @@ async function buildCartDTO(userId) {
 }
 
 async function getCart(req, res) {
-  const dto = await buildCartDTO(req.user.id);
-  if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-  res.json(dto);
+  await respondWithCart(req, res);
 }
 
 async function addItem(req, res) {
@@ -126,9 +141,7 @@ async function addItem(req, res) {
         },
       });
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.status(201).json(dto);
+    await respondWithCart(req, res, 201);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -180,9 +193,7 @@ async function addPackage(req, res) {
         },
       });
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.json(dto);
+    await respondWithCart(req, res);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -207,9 +218,7 @@ async function updateItem(req, res) {
 
     if (!data) return res.status(404).json({ error: 'Item tidak ditemukan' });
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.json(dto);
+    await respondWithCart(req, res);
   } catch (err) {
     res.status(404).json({ error: 'Item tidak ditemukan' });
   }
@@ -223,9 +232,7 @@ async function removeItem(req, res) {
     await db.delete(cart_items)
       .where(and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)));
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.json(dto);
+    await respondWithCart(req, res);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -269,9 +276,7 @@ async function convertItemToRequest(req, res) {
 
     if (!data) return res.status(404).json({ error: 'Item tidak ditemukan' });
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.json(dto);
+    await respondWithCart(req, res);
   } catch (err) {
     res.status(404).json({ error: 'Item tidak ditemukan' });
   }
@@ -318,9 +323,7 @@ async function addMerch(req, res) {
         },
       });
 
-    const dto = await buildCartDTO(req.user.id);
-    if (!dto) return res.status(500).json({ error: 'Gagal memuat keranjang' });
-    res.status(201).json(dto);
+    await respondWithCart(req, res, 201);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

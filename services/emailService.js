@@ -1,28 +1,22 @@
 /**
  * Email service — powered by Resend.
+ *
+ * Templates are pure functions: each `templates.X(params)` returns `{ subject, html }`.
+ * The `sendX` wrappers add I/O (Resend dispatch). This split lets tests assert template
+ * output without mocking the Resend SDK.
+ *
  * Never throws: errors are logged and swallowed so email failures never break order flow.
  */
 
 const { Resend } = require('resend');
 const env = require('../config/env');
+const { formatIDR, formatDate, formatExpiryDate } = require('../format');
 
 const resend = new Resend(env.RESEND_API_KEY);
 
-function formatIDR(amount) {
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
-}
-
-function formatDate(iso) {
-  return new Intl.DateTimeFormat('id-ID', {
-    day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta',
-  }).format(new Date(iso));
-}
-
-function formatExpiryDate(iso) {
-  return new Intl.DateTimeFormat('id-ID', {
-    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Taipei',
-  }).format(new Date(iso));
+// Emails are read in Indonesia → use Jakarta timezone for date stamps.
+function emailDate(iso) {
+  return formatDate(iso, { timeZone: 'Asia/Jakarta' });
 }
 
 function itemRows(items = []) {
@@ -35,22 +29,11 @@ function itemRows(items = []) {
   }).join('');
 }
 
-async function _send(payload) {
-  if (!env.RESEND_API_KEY) {
-    console.log('[Email] RESEND_API_KEY not set — skipping send:', payload.subject);
-    return;
-  }
-  const { data, error } = await resend.emails.send({ from: env.EMAIL_FROM, ...payload });
-  if (error) console.error('[Email] send failed:', error);
-  else console.log('[Email] sent id:', data.id);
-}
-
-/** sendPaymentRequest — triggered when admin confirms Karunika stock (→ awaiting_payment) */
-async function sendPaymentRequest({ email, name, orderNumber, totalAmount, items, bank, account, expiresAt }) {
-  await _send({
-    to: email,
-    subject: `Stok tersedia — silakan bayar ${orderNumber}`,
-    html: `
+const templates = {
+  paymentRequest({ name, orderNumber, totalAmount, items, bank, account, expiresAt }) {
+    return {
+      subject: `Stok tersedia — silakan bayar ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <p style="color:#6b7280;font-size:13px;margin-top:0;">Konfirmasi Stok &amp; Instruksi Pembayaran</p>
@@ -69,7 +52,7 @@ async function sendPaymentRequest({ email, name, orderNumber, totalAmount, items
         <td style="text-align:right;font-weight:700;font-size:16px;color:#92400e;">${formatIDR(totalAmount)}</td>
       </tr>
     </table>
-    ${expiresAt ? `<p style="margin:8px 0 0 0;font-size:12px;color:#dc2626;">Batas pembayaran: ${formatDate(expiresAt)}</p>` : ''}
+    ${expiresAt ? `<p style="margin:8px 0 0 0;font-size:12px;color:#dc2626;">Batas pembayaran: ${emailDate(expiresAt)}</p>` : ''}
   </div>
   <h3 style="font-size:14px;color:#374151;margin-bottom:8px;">Rincian Pesanan</h3>
   <table style="width:100%;border-collapse:collapse;">
@@ -81,15 +64,13 @@ async function sendPaymentRequest({ email, name, orderNumber, totalAmount, items
   </table>
   <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Harap transfer jumlah yang tepat dan simpan bukti transfer. Admin akan mengkonfirmasi pembayaran Anda.</p>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendPaymentConfirmed — triggered when admin confirms payment received (→ paid) */
-async function sendPaymentConfirmed({ email, name, orderNumber, totalAmount, items }) {
-  await _send({
-    to: email,
-    subject: `Pembayaran dikonfirmasi — ${orderNumber}`,
-    html: `
+  paymentConfirmed({ name, orderNumber, totalAmount, items }) {
+    return {
+      subject: `Pembayaran dikonfirmasi — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -107,15 +88,13 @@ async function sendPaymentConfirmed({ email, name, orderNumber, totalAmount, ite
     </tr>
   </table>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendOrderProcessing — triggered when admin moves order to processing */
-async function sendOrderProcessing({ email, name, orderNumber, items }) {
-  await _send({
-    to: email,
-    subject: `Pesanan sedang diproses — ${orderNumber}`,
-    html: `
+  orderProcessing({ name, orderNumber, items }) {
+    return {
+      subject: `Pesanan sedang diproses — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -128,15 +107,13 @@ async function sendOrderProcessing({ email, name, orderNumber, items }) {
   <h3 style="font-size:14px;color:#374151;margin-bottom:8px;">Modul yang Dipesan</h3>
   <table style="width:100%;border-collapse:collapse;">${itemRows(items)}</table>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendOrderShipped — triggered when admin marks order as shipped */
-async function sendOrderShipped({ email, name, orderNumber, items }) {
-  await _send({
-    to: email,
-    subject: `Pesanan telah dikirim — ${orderNumber}`,
-    html: `
+  orderShipped({ name, orderNumber, items }) {
+    return {
+      subject: `Pesanan telah dikirim — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -149,15 +126,13 @@ async function sendOrderShipped({ email, name, orderNumber, items }) {
   <h3 style="font-size:14px;color:#374151;margin-bottom:8px;">Modul yang Dikirim</h3>
   <table style="width:100%;border-collapse:collapse;">${itemRows(items)}</table>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendOrderConfirmation — called immediately after checkout */
-async function sendOrderConfirmation({ email, name, orderNumber, totalAmount, items }) {
-  await _send({
-    to: email,
-    subject: `Pesanan diterima — ${orderNumber}`,
-    html: `
+  orderConfirmation({ name, orderNumber, totalAmount, items }) {
+    return {
+      subject: `Pesanan diterima — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <p style="color:#6b7280;font-size:13px;margin-top:0;">Konfirmasi Pesanan</p>
@@ -177,15 +152,13 @@ async function sendOrderConfirmation({ email, name, orderNumber, totalAmount, it
   </table>
   <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Anda dapat memantau status pesanan di halaman Pesanan.</p>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendOrderCancelled — called when user cancels a pending order */
-async function sendOrderCancelled({ email, name, orderNumber }) {
-  await _send({
-    to: email,
-    subject: `Pesanan dibatalkan — ${orderNumber}`,
-    html: `
+  orderCancelled({ name, orderNumber }) {
+    return {
+      subject: `Pesanan dibatalkan — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -196,18 +169,16 @@ async function sendOrderCancelled({ email, name, orderNumber }) {
   </div>
   <p style="font-size:13px;color:#374151;">Jika ada pertanyaan, hubungi kami di <a href="mailto:pengurus.uttaiwan@gmail.com" style="color:#4f46e5;">pengurus.uttaiwan@gmail.com</a>.</p>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendSalutApproved — called when admin approves a SALUT application */
-async function sendSalutApproved({ email, name, expiresAt }) {
-  const expiryLine = expiresAt
-    ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap tahun pada 1 Mei.</p>`
-    : '';
-  await _send({
-    to: email,
-    subject: 'Keanggotaan SALUT Anda telah disetujui',
-    html: `
+  salutApproved({ name, expiresAt }) {
+    const expiryLine = expiresAt
+      ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap tahun pada 1 Mei.</p>`
+      : '';
+    return {
+      subject: 'Keanggotaan SALUT Anda telah disetujui',
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -220,15 +191,13 @@ async function sendSalutApproved({ email, name, expiresAt }) {
   </div>
   <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Manfaat ini berlaku otomatis saat Anda melakukan checkout berikutnya.</p>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendSalutRejected — called when admin rejects a SALUT application */
-async function sendSalutRejected({ email, name, reason }) {
-  await _send({
-    to: email,
-    subject: 'Permohonan SALUT Anda tidak dapat disetujui',
-    html: `
+  salutRejected({ name, reason }) {
+    return {
+      subject: 'Permohonan SALUT Anda tidak dapat disetujui',
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -240,22 +209,19 @@ async function sendSalutRejected({ email, name, reason }) {
   </div>
   <p style="font-size:13px;color:#374151;">Anda dapat mengajukan kembali melalui halaman <strong>Profil</strong> setelah memenuhi persyaratan. Jika ada pertanyaan, hubungi kami di <a href="mailto:pengurus.uttaiwan@gmail.com" style="color:#4f46e5;">pengurus.uttaiwan@gmail.com</a>.</p>
 </div>`,
-  });
-}
+    };
+  },
 
-/** sendRequestItemsResolved — called when admin finishes reviewing all request items in an order */
-async function sendRequestItemsResolved({ email, name, orderNumber, approved, rejected }) {
-  const approvedRows = approved.map(n =>
-    `<tr><td style="padding:5px 0;color:#065f46;font-size:13px;">✓ ${n}</td></tr>`
-  ).join('');
-  const rejectedRows = rejected.map(n =>
-    `<tr><td style="padding:5px 0;color:#991b1b;font-size:13px;">✕ ${n}</td></tr>`
-  ).join('');
-
-  await _send({
-    to: email,
-    subject: `Permintaan barang diproses — ${orderNumber}`,
-    html: `
+  requestItemsResolved({ name, orderNumber, approved, rejected }) {
+    const approvedRows = approved.map(n =>
+      `<tr><td style="padding:5px 0;color:#065f46;font-size:13px;">✓ ${n}</td></tr>`
+    ).join('');
+    const rejectedRows = rejected.map(n =>
+      `<tr><td style="padding:5px 0;color:#991b1b;font-size:13px;">✕ ${n}</td></tr>`
+    ).join('');
+    return {
+      subject: `Permintaan barang diproses — ${orderNumber}`,
+      html: `
 <div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
   <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
   <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
@@ -274,10 +240,56 @@ async function sendRequestItemsResolved({ email, name, orderNumber, approved, re
   ${approved.length > 0 ? `<p style="font-size:13px;color:#374151;">Instruksi pembayaran untuk item yang disetujui akan segera dikirimkan melalui email terpisah.</p>` : ''}
   <p style="font-size:12px;color:#9ca3af;margin-top:16px;">Pantau status pesanan Anda di halaman Pesanan.</p>
 </div>`,
-  });
+    };
+  },
+};
+
+async function _send(payload) {
+  if (!env.RESEND_API_KEY) {
+    console.log('[Email] RESEND_API_KEY not set — skipping send:', payload.subject);
+    return;
+  }
+  const { data, error } = await resend.emails.send({ from: env.EMAIL_FROM, ...payload });
+  if (error) console.error('[Email] send failed:', error);
+  else console.log('[Email] sent id:', data.id);
 }
 
-/** sendPaymentReceipt — stub */
+async function sendPaymentRequest({ email, ...params }) {
+  await _send({ to: email, ...templates.paymentRequest(params) });
+}
+
+async function sendPaymentConfirmed({ email, ...params }) {
+  await _send({ to: email, ...templates.paymentConfirmed(params) });
+}
+
+async function sendOrderProcessing({ email, ...params }) {
+  await _send({ to: email, ...templates.orderProcessing(params) });
+}
+
+async function sendOrderShipped({ email, ...params }) {
+  await _send({ to: email, ...templates.orderShipped(params) });
+}
+
+async function sendOrderConfirmation({ email, ...params }) {
+  await _send({ to: email, ...templates.orderConfirmation(params) });
+}
+
+async function sendOrderCancelled({ email, ...params }) {
+  await _send({ to: email, ...templates.orderCancelled(params) });
+}
+
+async function sendSalutApproved({ email, ...params }) {
+  await _send({ to: email, ...templates.salutApproved(params) });
+}
+
+async function sendSalutRejected({ email, ...params }) {
+  await _send({ to: email, ...templates.salutRejected(params) });
+}
+
+async function sendRequestItemsResolved({ email, ...params }) {
+  await _send({ to: email, ...templates.requestItemsResolved(params) });
+}
+
 async function sendPaymentReceipt({ email, name, orderNumber, paidAt }) {
   console.log(`[Email] Payment receipt for ${email} — ${orderNumber} — paid at ${paidAt}`);
 }
@@ -293,4 +305,5 @@ module.exports = {
   sendSalutRejected,
   sendRequestItemsResolved,
   sendPaymentReceipt,
+  templates,
 };

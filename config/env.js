@@ -18,6 +18,10 @@ const env = {
   // Frontend
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
 
+  // Public URL of this API (used to build storage proxy URLs in DTOs).
+  // Defaults to localhost in dev so URLs work locally; set in prod.
+  API_PUBLIC_URL: process.env.API_PUBLIC_URL || `http://localhost:${process.env.PORT || 3001}`,
+
   // Email (Resend)
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   EMAIL_FROM: process.env.EMAIL_FROM || 'UT Taiwan <noreply@ut-taiwan.com>',
