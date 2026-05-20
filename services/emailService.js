@@ -19,6 +19,12 @@ function formatDate(iso) {
   }).format(new Date(iso));
 }
 
+function formatExpiryDate(iso) {
+  return new Intl.DateTimeFormat('id-ID', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Taipei',
+  }).format(new Date(iso));
+}
+
 function itemRows(items = []) {
   return items.map(i => {
     const label = i.module_code ? `${i.module_code} ${i.module_name}` : i.module_name;
@@ -194,7 +200,10 @@ async function sendOrderCancelled({ email, name, orderNumber }) {
 }
 
 /** sendSalutApproved — called when admin approves a SALUT application */
-async function sendSalutApproved({ email, name }) {
+async function sendSalutApproved({ email, name, expiresAt }) {
+  const expiryLine = expiresAt
+    ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap tahun pada 1 Mei.</p>`
+    : '';
   await _send({
     to: email,
     subject: 'Keanggotaan SALUT Anda telah disetujui',
@@ -207,6 +216,7 @@ async function sendSalutApproved({ email, name }) {
   <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:16px;margin:16px 0;">
     <p style="margin:0 0 6px 0;color:#065f46;font-weight:600;">✓ Anggota SALUT Aktif</p>
     <p style="margin:0;color:#047857;font-size:13px;">Biaya ongkir, box, dan administrasi Anda akan dibebaskan untuk seluruh pesanan berikutnya.</p>
+    ${expiryLine}
   </div>
   <p style="font-size:12px;color:#9ca3af;margin-top:24px;">Manfaat ini berlaku otomatis saat Anda melakukan checkout berikutnya.</p>
 </div>`,

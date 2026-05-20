@@ -6,7 +6,7 @@ const env = require('../config/env');
 
 function buildProfileInsert(userId, body) {
   const {
-    email, name, nim, phone, birth_place, birth_date, program_id,
+    email, name, nim, phone, birth_place, birth_date, program_id, current_semester,
     address_zh_city, address_zh_district, address_zh_road, address_zh_number, address_zh_floor,
     postal_code,
     bank_ntd_code, bank_ntd_name, bank_ntd_account, bank_idr_name, bank_idr_account,
@@ -16,6 +16,7 @@ function buildProfileInsert(userId, body) {
     birth_place: birth_place || null,
     birth_date: birth_date || null,
     program_id,
+    current_semester,
     address_zh_city, address_zh_district, address_zh_road, address_zh_number,
     address_zh_floor: address_zh_floor || null,
     postal_code: postal_code || null,
@@ -29,7 +30,7 @@ function buildProfileInsert(userId, body) {
 
 async function register(req, res) {
   const { email, password, name, nim, phone, birth_place, birth_date,
-          program_id,
+          program_id, current_semester,
           address_zh_city, address_zh_district, address_zh_road, address_zh_number, address_zh_floor,
           postal_code,
           bank_ntd_code, bank_ntd_name, bank_ntd_account,
@@ -40,6 +41,10 @@ async function register(req, res) {
       || !address_zh_city || !address_zh_district || !address_zh_road || !address_zh_number
       || !postal_code) {
     return res.status(400).json({ error: 'email, password, nama, NIM, nomor HP, tempat/tanggal lahir, program studi, alamat Mandarin, dan kode pos wajib diisi' });
+  }
+
+  if (!Number.isInteger(current_semester) || current_semester < 1 || current_semester > 9) {
+    return res.status(400).json({ error: 'Semester saat ini wajib diisi (1-9)' });
   }
 
   const ntdComplete = bank_ntd_code && bank_ntd_account;

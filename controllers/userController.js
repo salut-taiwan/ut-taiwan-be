@@ -3,6 +3,7 @@ const { db } = require('../db');
 const { users } = require('../db/schema');
 const { eq, and, ne, or, ilike, inArray, asc, desc } = require('drizzle-orm');
 const emailService = require('../services/emailService');
+const { nextSalutExpiry } = require('../config/constants');
 
 const ALLOWED_SORT_COLS = new Set(['name', 'nim', 'created_at']);
 
@@ -66,6 +67,14 @@ async function updateUserSalut(req, res) {
 
     if (!data) return res.status(404).json({ error: 'User not found' });
     res.json(data);
+
+    if (is_salut) {
+      emailService.sendSalutApproved({
+        email: data.email,
+        name: data.name,
+        expiresAt: nextSalutExpiry(new Date()).toISOString(),
+      }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -111,6 +120,7 @@ async function listSalutApplications(req, res) {
       columns: {
         id: true, email: true, name: true, nim: true, current_semester: true,
         salut_applied_at: true, salut_payment_proof_url: true,
+        salut_applied_fee_amount: true, salut_applied_semester: true,
       },
       where: and(...conditions),
       orderBy: asc(users.salut_applied_at),
@@ -159,8 +169,9 @@ async function approveSalutApplication(req, res) {
       return res.status(400).json({ error: 'Permohonan bukan dalam status pending' });
     }
 
+    const approvedAt = new Date();
     const [data] = await db.update(users)
-      .set({ is_salut: true, salut_status: 'approved', salut_approved_at: new Date() })
+      .set({ is_salut: true, salut_status: 'approved', salut_approved_at: approvedAt })
       .where(eq(users.id, userId))
       .returning({
         id: users.id, email: users.email, name: users.name, nim: users.nim,
@@ -168,7 +179,11 @@ async function approveSalutApplication(req, res) {
       });
 
     res.json(data);
-    emailService.sendSalutApproved({ email: data.email, name: data.name }).catch(() => {});
+    emailService.sendSalutApproved({
+      email: data.email,
+      name: data.name,
+      expiresAt: nextSalutExpiry(approvedAt).toISOString(),
+    }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

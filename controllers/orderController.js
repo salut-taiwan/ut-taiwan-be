@@ -5,7 +5,7 @@ const { eq, and, desc, count } = require('drizzle-orm');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
 const orderEmailService = require('../services/orderEmailService');
-const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK, SALUT_FEES } = require('../config/constants');
+const { PAYMENT_EXPIRY_MS, ORDER_STATUS_TRANSITIONS, CONFIRM_DEADLINE_MS, ORDER_STEPS, PAYMENT_BANK, SALUT_FEES, isSalutActive } = require('../config/constants');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -60,10 +60,10 @@ async function checkout(req, res) {
   }
 
   const userRecord = await db.query.users.findFirst({
-    columns: { is_salut: true },
+    columns: { is_salut: true, salut_approved_at: true },
     where: eq(users.id, req.user.id),
   });
-  const isSalut  = userRecord?.is_salut ?? false;
+  const isSalut  = (userRecord?.is_salut ?? false) && isSalutActive(userRecord?.salut_approved_at);
   const ongkir   = isSalut ? 0 : SALUT_FEES.ONGKIR;
   const boxFee   = isSalut ? 0 : SALUT_FEES.BOX;
   const adminFee = isSalut ? 0 : SALUT_FEES.ADMIN;

@@ -146,13 +146,15 @@ const users = pgTable('users', {
   address_zh_road:     text('address_zh_road'),
   address_zh_number:   text('address_zh_number'),
   address_zh_floor:    text('address_zh_floor'),
-  // SALUT membership (migrations 015, 018)
+  // SALUT membership (migrations 015, 018, 022)
   is_salut:                  boolean('is_salut').default(false).notNull(),
-  salut_status:              text('salut_status').default('none').notNull(), // none | pending | approved | rejected
+  salut_status:              text('salut_status').default('none').notNull(), // none | pending | approved | rejected | expired
   salut_applied_at:          tsz('salut_applied_at'),
   salut_payment_proof_url:   text('salut_payment_proof_url'),
   salut_rejection_reason:    text('salut_rejection_reason'),
   salut_approved_at:         tsz('salut_approved_at'),
+  salut_applied_fee_amount:  numeric('salut_applied_fee_amount', { precision: 12, scale: 2 }),
+  salut_applied_semester:    integer('salut_applied_semester'),
   created_at: tsz('created_at').defaultNow(),
   updated_at: tsz('updated_at').defaultNow(),
 });

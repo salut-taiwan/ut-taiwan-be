@@ -3,9 +3,21 @@ const { db } = require('../db');
 const { users } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const { v4: uuid } = require('uuid');
+const {
+  SALUT_MEMBERSHIP,
+  getSalutMembershipFee,
+  nextSalutExpiry,
+} = require('../config/constants');
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+
+const RENEWAL_POLICY_PAYLOAD = {
+  resetMonth: SALUT_MEMBERSHIP.EXPIRY_MONTH,
+  resetDay: SALUT_MEMBERSHIP.EXPIRY_DAY,
+  timezone: SALUT_MEMBERSHIP.EXPIRY_TIMEZONE,
+  notice: SALUT_MEMBERSHIP.RENEWAL_NOTICE,
+};
 
 function extFromMime(mime) {
   const map = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
@@ -37,14 +49,20 @@ async function uploadProof(req, res) {
 }
 
 async function applyForMembership(req, res) {
-  const { proofUrl } = req.body;
+  const { proofUrl, current_semester: bodySemester } = req.body;
   if (!proofUrl || typeof proofUrl !== 'string' || !proofUrl.trim()) {
     return res.status(400).json({ error: 'URL bukti pembayaran wajib diisi' });
   }
 
+  if (bodySemester !== undefined && bodySemester !== null) {
+    if (!Number.isInteger(bodySemester) || bodySemester < 1 || bodySemester > 9) {
+      return res.status(400).json({ error: 'Semester saat ini harus angka 1 sampai 9' });
+    }
+  }
+
   try {
     const user = await db.query.users.findFirst({
-      columns: { is_salut: true, salut_status: true },
+      columns: { is_salut: true, salut_status: true, current_semester: true },
       where: eq(users.id, req.user.id),
     });
 
@@ -56,6 +74,14 @@ async function applyForMembership(req, res) {
     if (user.salut_status === 'pending') {
       return res.status(400).json({ error: 'Permohonan Anda sedang dalam proses verifikasi' });
     }
+    // 'none', 'rejected', and 'expired' are all eligible to apply (or re-apply).
+
+    const resolvedSemester = bodySemester ?? user.current_semester;
+    if (!Number.isInteger(resolvedSemester) || resolvedSemester < 1 || resolvedSemester > 9) {
+      return res.status(400).json({ error: 'Semester saat ini wajib diisi (1-9)' });
+    }
+
+    const fee = getSalutMembershipFee(resolvedSemester);
 
     await db.update(users)
       .set({
@@ -63,10 +89,18 @@ async function applyForMembership(req, res) {
         salut_applied_at: new Date(),
         salut_payment_proof_url: proofUrl.trim(),
         salut_rejection_reason: null,
+        current_semester: resolvedSemester,
+        salut_applied_fee_amount: String(fee.amount),
+        salut_applied_semester: resolvedSemester,
       })
       .where(eq(users.id, req.user.id));
 
-    res.json({ message: 'Permohonan berhasil dikirim' });
+    res.json({
+      message: 'Permohonan berhasil dikirim',
+      fee,
+      nextExpiry: nextSalutExpiry(new Date()).toISOString(),
+      renewalPolicy: RENEWAL_POLICY_PAYLOAD,
+    });
   } catch (err) {
     res.status(500).json({ error: 'Gagal mengirim permohonan' });
   }
@@ -81,12 +115,17 @@ async function getApplicationStatus(req, res) {
         salut_applied_at: true,
         salut_rejection_reason: true,
         salut_approved_at: true,
+        salut_applied_fee_amount: true,
+        salut_applied_semester: true,
       },
       where: eq(users.id, req.user.id),
     });
 
     if (!data) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
-    res.json(data);
+    res.json({
+      ...data,
+      renewalPolicy: RENEWAL_POLICY_PAYLOAD,
+    });
   } catch (err) {
     res.status(404).json({ error: 'Pengguna tidak ditemukan' });
   }
