@@ -31,7 +31,7 @@ async function listUsers(req, res) {
     const data = await db.query.users.findMany({
       columns: {
         id: true, email: true, name: true, nim: true, phone: true,
-        current_semester: true, role: true, is_verified: true, is_salut: true, created_at: true,
+        current_semester: true, role: true, is_verified: true, is_salut: true, salut_status: true, created_at: true,
       },
       where: and(...conditions),
       orderBy: sortDir(users[sortCol]),
