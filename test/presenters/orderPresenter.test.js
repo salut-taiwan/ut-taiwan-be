@@ -283,6 +283,19 @@ describe('presentOrderListItem', () => {
     assert.equal(out.created_at_display, '20 Mei 2026 pukul 14.30');
     assert.equal(out.total_amount_display, `Rp${NBSP}425.000`);
   });
+
+  test('payments get payment_status_label so the orders-list pill renders', () => {
+    const out = presentOrderListItem({
+      id: 'o-3',
+      order_number: 'UT-2026-0003',
+      status: 'paid',
+      total_amount: 425000,
+      created_at: '2026-05-20T06:30:00Z',
+      order_items: [],
+      payments: [{ status: 'paid', amount: 425000 }],
+    });
+    assert.equal(out.payments[0].payment_status_label, 'Lunas');
+  });
 });
 
 describe('presentAdminOrder', () => {

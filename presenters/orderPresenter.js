@@ -176,6 +176,7 @@ function presentOrderListItem(row) {
     status_label: getOrderStatusLabel(row.status),
     created_at_display: formatDate(row.created_at),
     total_amount_display: formatIDR(Number(row.total_amount)),
+    payments: (row.payments || []).map(presentPayment),
   };
 }
 
