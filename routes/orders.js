@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const adminOnly = require('../middleware/adminOnly');
+const requireVerified = require('../middleware/requireVerified');
 const ctrl = require('../controllers/orderController');
 
 router.use(auth);
@@ -10,7 +11,7 @@ router.get('/admin/all', adminOnly, ctrl.listAllOrders);
 router.patch('/admin/:orderId/status', adminOnly, ctrl.updateOrderStatus);
 router.post('/admin/:orderId/confirm-karunika', adminOnly, ctrl.confirmKarunika);
 router.patch('/admin/:orderId/items/:itemId/request-status', adminOnly, ctrl.updateRequestItemStatus);
-router.post('/checkout', ctrl.checkout);
+router.post('/checkout', requireVerified, ctrl.checkout);
 router.get('/', ctrl.listOrders);
 router.post('/:id/confirm-delivery', ctrl.confirmDelivery);
 router.get('/:id', ctrl.getOrder);

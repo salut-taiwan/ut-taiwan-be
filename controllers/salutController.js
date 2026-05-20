@@ -7,6 +7,7 @@ const {
   SALUT_MEMBERSHIP,
   getSalutMembershipFee,
   nextSalutExpiry,
+  isSalutActive,
 } = require('../config/constants');
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
@@ -62,19 +63,21 @@ async function applyForMembership(req, res) {
 
   try {
     const user = await db.query.users.findFirst({
-      columns: { is_salut: true, salut_status: true, current_semester: true },
+      columns: { is_salut: true, salut_status: true, current_semester: true, salut_approved_at: true },
       where: eq(users.id, req.user.id),
     });
 
     if (!user) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
 
-    if (user.is_salut || user.salut_status === 'approved') {
+    // Block only if the user is a CURRENTLY active SALUT member.
+    // Raw is_salut / salut_status='approved' can be stale after a cycle rolls over (lazy expiry).
+    if (isSalutActive(user.salut_approved_at)) {
       return res.status(400).json({ error: 'Anda sudah menjadi anggota SALUT' });
     }
     if (user.salut_status === 'pending') {
       return res.status(400).json({ error: 'Permohonan Anda sedang dalam proses verifikasi' });
     }
-    // 'none', 'rejected', and 'expired' are all eligible to apply (or re-apply).
+    // 'none', 'rejected', 'expired', and stale 'approved' (past cycle) are all eligible to apply.
 
     const resolvedSemester = bodySemester ?? user.current_semester;
     if (!Number.isInteger(resolvedSemester) || resolvedSemester < 1 || resolvedSemester > 9) {
@@ -122,8 +125,12 @@ async function getApplicationStatus(req, res) {
     });
 
     if (!data) return res.status(404).json({ error: 'Pengguna tidak ditemukan' });
+    const active = isSalutActive(data.salut_approved_at);
+    const effectiveStatus = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
     res.json({
       ...data,
+      is_salut_active: active,
+      salut_status: effectiveStatus,
       renewalPolicy: RENEWAL_POLICY_PAYLOAD,
     });
   } catch (err) {

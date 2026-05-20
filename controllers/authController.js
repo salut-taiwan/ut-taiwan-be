@@ -3,6 +3,7 @@ const { db } = require('../db');
 const { users } = require('../db/schema');
 const { eq } = require('drizzle-orm');
 const env = require('../config/env');
+const { isSalutActive } = require('./../config/constants');
 
 function buildProfileInsert(userId, body) {
   const {
@@ -128,7 +129,15 @@ async function getMe(req, res) {
     });
 
     if (!data) return res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
-    res.json(data);
+    const active = isSalutActive(data.salut_approved_at);
+    // Mask a stale 'approved' (from a past May-1 cycle) as 'expired' so the frontend
+    // doesn't have to replicate the date math everywhere.
+    const effectiveStatus = (!active && data.salut_status === 'approved') ? 'expired' : data.salut_status;
+    res.json({
+      ...data,
+      is_salut_active: active,
+      salut_status: effectiveStatus,
+    });
   } catch (err) {
     res.status(404).json({ error: 'Profil tidak ditemukan', code: 'PROFILE_MISSING' });
   }
