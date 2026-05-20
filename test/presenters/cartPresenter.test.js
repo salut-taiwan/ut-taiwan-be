@@ -1,11 +1,7 @@
 'use strict';
 
-const { test, describe, before } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-
-before(() => {
-  process.env.API_PUBLIC_URL = 'https://api.example.com';
-});
 
 const { presentCart, buildCartTotalBreakdown } = require('../../presenters/cartPresenter');
 const { SALUT_FEES } = require('../../config/constants');
@@ -51,7 +47,7 @@ describe('presentCart — per-item displays', () => {
     const out = presentCart(makeRawCart(), { isSalutActive: false });
     assert.equal(
       out.items[0].coverImageUrl,
-      'https://api.example.com/api/storage/v1/object/public/module-covers/foo.jpg'
+      '/api/storage/v1/object/public/module-covers/foo.jpg'
     );
   });
 

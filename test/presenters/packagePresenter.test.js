@@ -1,11 +1,7 @@
 'use strict';
 
-const { test, describe, before } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-
-before(() => {
-  process.env.API_PUBLIC_URL = 'https://api.example.com';
-});
 
 const { presentPackage } = require('../../presenters/packagePresenter');
 
@@ -78,7 +74,7 @@ describe('presentPackage', () => {
     const out = presentPackage(pkg());
     assert.equal(
       out.package_modules[0].modules.cover_image_url,
-      'https://api.example.com/api/storage/v1/object/public/m/a.jpg'
+      '/api/storage/v1/object/public/m/a.jpg'
     );
   });
 

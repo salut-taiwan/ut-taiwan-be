@@ -1,23 +1,19 @@
 'use strict';
 
-const { test, describe, before } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-
-before(() => {
-  process.env.API_PUBLIC_URL = 'https://api.example.com';
-});
 
 const { rewriteStorageUrl } = require('../../format/storage');
 
 describe('rewriteStorageUrl', () => {
-  test('rewrites Supabase public storage URL to proxy path', () => {
+  test('rewrites Supabase public storage URL to relative proxy path', () => {
     const input = 'https://abc.supabase.co/storage/v1/object/public/module-covers/foo.jpg';
-    const expected = 'https://api.example.com/api/storage/v1/object/public/module-covers/foo.jpg';
+    const expected = '/api/storage/v1/object/public/module-covers/foo.jpg';
     assert.equal(rewriteStorageUrl(input), expected);
   });
 
-  test('idempotent — already-rewritten URL returns unchanged', () => {
-    const input = 'https://api.example.com/api/storage/v1/object/public/module-covers/foo.jpg';
+  test('idempotent — already-rewritten relative path returns unchanged', () => {
+    const input = '/api/storage/v1/object/public/module-covers/foo.jpg';
     assert.equal(rewriteStorageUrl(input), input);
   });
 
@@ -43,9 +39,9 @@ describe('rewriteStorageUrl', () => {
     assert.equal(rewriteStorageUrl(''), null);
   });
 
-  test('preserves query string', () => {
+  test('preserves query string (e.g. signed URLs)', () => {
     const input = 'https://abc.supabase.co/storage/v1/object/sign/foo.jpg?token=abc123';
-    const expected = 'https://api.example.com/api/storage/v1/object/sign/foo.jpg?token=abc123';
+    const expected = '/api/storage/v1/object/sign/foo.jpg?token=abc123';
     assert.equal(rewriteStorageUrl(input), expected);
   });
 
@@ -53,7 +49,7 @@ describe('rewriteStorageUrl', () => {
     const input = 'https://xyz123.supabase.co/storage/v1/object/public/bucket/path.png';
     assert.equal(
       rewriteStorageUrl(input),
-      'https://api.example.com/api/storage/v1/object/public/bucket/path.png'
+      '/api/storage/v1/object/public/bucket/path.png'
     );
   });
 });

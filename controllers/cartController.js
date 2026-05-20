@@ -135,7 +135,9 @@ async function addItem(req, res) {
       .onConflictDoUpdate({
         target: [cart_items.cart_id, cart_items.module_id],
         set: {
-          quantity,
+          // Increment existing qty rather than overwrite it — matches the user's
+          // expectation when they tap "Add to cart" twice on the same module.
+          quantity: sql`${cart_items.quantity} + ${quantity}`,
           price_snapshot: priceSnapshot,
           is_request: isRequest,
         },
@@ -242,7 +244,7 @@ async function clearCart(req, res) {
   try {
     const cart = await getOrCreateCart(req.user.id);
     await db.delete(cart_items).where(eq(cart_items.cart_id, cart.id));
-    res.json({ message: 'Keranjang berhasil dikosongkan' });
+    await respondWithCart(req, res);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

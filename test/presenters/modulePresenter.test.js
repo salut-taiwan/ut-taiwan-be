@@ -1,11 +1,7 @@
 'use strict';
 
-const { test, describe, before } = require('node:test');
+const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-
-before(() => {
-  process.env.API_PUBLIC_URL = 'https://api.example.com';
-});
 
 const { presentModule, presentModuleList } = require('../../presenters/modulePresenter');
 
@@ -24,7 +20,7 @@ describe('presentModule', () => {
     });
     assert.equal(out.price_student_display, `Rp${NBSP}50.000`);
     assert.equal(out.price_general_display, `Rp${NBSP}75.000`);
-    assert.equal(out.cover_image_url, 'https://api.example.com/api/storage/v1/object/public/m/foo.jpg');
+    assert.equal(out.cover_image_url, '/api/storage/v1/object/public/m/foo.jpg');
   });
 
   test('null price -> null display', () => {
