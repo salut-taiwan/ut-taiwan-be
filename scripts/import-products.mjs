@@ -29,6 +29,50 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const BUCKET = 'products';
 
+// Mirrors migrations/023_backfill_variant_hex_colors.sql.
+// Keep these two lists in sync when adding new color names.
+const NAMED_COLOR_HEX = {
+  navy: '#000080',
+  black: '#000000',
+  white: '#FFFFFF',
+  red: '#E11D48',
+  blue: '#2563EB',
+  green: '#16A34A',
+  yellow: '#FACC15',
+  purple: '#7C3AED',
+  orange: '#F97316',
+  pink: '#EC4899',
+  brown: '#92400E',
+  gray: '#6B7280',
+  grey: '#6B7280',
+  beige: '#F5F5DC',
+  cream: '#FFFDD0',
+  maroon: '#800000',
+  olive: '#808000',
+  teal: '#0D9488',
+  silver: '#C0C0C0',
+  gold: '#D4AF37',
+  hitam: '#000000',
+  putih: '#FFFFFF',
+  merah: '#E11D48',
+  biru: '#2563EB',
+  hijau: '#16A34A',
+  kuning: '#FACC15',
+  ungu: '#7C3AED',
+  oranye: '#F97316',
+  coklat: '#92400E',
+  cokelat: '#92400E',
+  abu: '#6B7280',
+  'abu-abu': '#6B7280',
+  krem: '#FFFDD0',
+  dongker: '#1E3A8A',
+};
+
+function resolveNamedColor(value) {
+  if (typeof value !== 'string') return null;
+  return NAMED_COLOR_HEX[value.toLowerCase().trim()] ?? null;
+}
+
 function inferCategory(name) {
   const n = name.toLowerCase();
   if (n.includes('jas almamater')) return 'jas-almamater';
@@ -136,7 +180,7 @@ async function importProduct(product) {
     const options = (vt.options || []).map((opt, oi) => ({
       variant_type_id: vtRow.id,
       value: opt.value,
-      hex_color: opt.hex || null,
+      hex_color: opt.hex || resolveNamedColor(opt.value),
       sort_order: oi,
     }));
     if (options.length > 0) {
