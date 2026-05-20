@@ -318,7 +318,7 @@ async function addMerch(req, res) {
       .onConflictDoUpdate({
         target: [cart_items.cart_id, cart_items.sku_id],
         set: {
-          quantity: qty,
+          quantity: sql`${cart_items.quantity} + ${qty}`,
           price_snapshot: sku.price,
           variant_label: variantLabel,
           product_name_snapshot: sku.products.name,
