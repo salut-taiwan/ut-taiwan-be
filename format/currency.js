@@ -23,4 +23,12 @@ function formatNTD(amount) {
   return `NT$ ${ntdNumberFormatter.format(n)}`;
 }
 
-module.exports = { formatIDR, formatNTD };
+function formatPriceOrFree(amount) {
+  if (amount === null || amount === undefined) return null;
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return null;
+  if (n === 0) return 'Gratis';
+  return idrFormatter.format(n);
+}
+
+module.exports = { formatIDR, formatNTD, formatPriceOrFree };

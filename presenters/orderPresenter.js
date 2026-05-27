@@ -2,6 +2,7 @@
 
 const {
   formatIDR,
+  formatPriceOrFree,
   formatDate,
   getOrderStatusLabel,
   getStepLabel,
@@ -75,8 +76,8 @@ function presentOrderItem(item) {
   const priceVisible = display !== 'rejected' && display !== 'zero_price';
   return {
     ...item,
-    unit_price_display: formatIDR(Number(item.unit_price)),
-    subtotal_display: formatIDR(Number(item.subtotal)),
+    unit_price_display: formatPriceOrFree(Number(item.unit_price)),
+    subtotal_display: formatPriceOrFree(Number(item.subtotal)),
     request_status_label: getRequestStatusLabel(item.request_status),
     price_visible: priceVisible,
   };
@@ -106,7 +107,7 @@ function presentOrderCommon(order) {
     isSalutOrder: Boolean(order.is_salut_order),
   });
   return {
-    subtotal_display: formatIDR(Number(order.subtotal)),
+    subtotal_display: formatPriceOrFree(Number(order.subtotal)),
     shipping_cost_display: formatIDR(Number(order.shipping_cost ?? 0)),
     box_fee_display: formatIDR(Number(order.box_fee ?? 0)),
     admin_fee_display: formatIDR(Number(order.admin_fee ?? 0)),

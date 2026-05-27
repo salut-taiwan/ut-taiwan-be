@@ -12,6 +12,7 @@ const {
   presentAdminOrder,
 } = require('../presenters/orderPresenter');
 const { composeShippingAddressLine } = require('../format');
+const { checkSalutSem1Eligibility } = require('../services/claimRules');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -73,7 +74,7 @@ async function checkout(req, res) {
       modules: { columns: { id: true, tbo_code: true, name: true, is_available: true } },
       product_skus: {
         columns: { id: true, price: true },
-        with: { products: { columns: { name: true } } },
+        with: { products: { columns: { id: true, name: true, claim_rule: true } } },
       },
     },
   });
@@ -88,6 +89,19 @@ async function checkout(req, res) {
       error: 'Beberapa modul tidak tersedia. Silakan ubah ke permintaan atau hapus dari keranjang.',
       modules: unavailable.map(i => i.modules.tbo_code),
     });
+  }
+
+  // Re-validate eligibility for any claim-gated SKUs at checkout time.
+  // A user could have been eligible at cart-add then had their semester bumped
+  // or membership lapsed before pressing checkout.
+  for (const i of cartItems) {
+    const product = i.product_skus?.products;
+    if (product?.claim_rule === 'salut_sem1_once') {
+      const eligibility = await checkSalutSem1Eligibility(req.user.id, product.id);
+      if (!eligibility.ok) {
+        return res.status(eligibility.status).json({ error: eligibility.error });
+      }
+    }
   }
 
   const userRecord = await db.query.users.findFirst({

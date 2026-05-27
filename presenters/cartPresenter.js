@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatIDR, rewriteStorageUrl } = require('../format');
+const { formatIDR, formatPriceOrFree, rewriteStorageUrl } = require('../format');
 const { SALUT_FEES } = require('../config/constants');
 
 const FEE_LINE_DEFS = [
@@ -49,8 +49,8 @@ function presentCartItem(item) {
   return {
     ...item,
     coverImageUrl: rewriteStorageUrl(item.coverImageUrl),
-    priceSnapshotDisplay: formatIDR(item.priceSnapshot),
-    subtotalDisplay: formatIDR(item.subtotal),
+    priceSnapshotDisplay: formatPriceOrFree(item.priceSnapshot),
+    subtotalDisplay: formatPriceOrFree(item.subtotal),
   };
 }
 

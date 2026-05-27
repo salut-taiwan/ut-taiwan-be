@@ -10,7 +10,7 @@
 
 const { Resend } = require('resend');
 const env = require('../config/env');
-const { formatIDR, formatDate, formatExpiryDate } = require('../format');
+const { formatIDR, formatPriceOrFree, formatDate, formatExpiryDate } = require('../format');
 
 const resend = new Resend(env.RESEND_API_KEY);
 
@@ -24,7 +24,7 @@ function itemRows(items = []) {
     const label = i.module_code ? `${i.module_code} ${i.module_name}` : i.module_name;
     return `<tr>
       <td style="padding:6px 0;color:#374151;font-size:13px;">${label}</td>
-      <td style="padding:6px 0;text-align:right;color:#374151;font-size:13px;">${formatIDR(i.subtotal)}</td>
+      <td style="padding:6px 0;text-align:right;color:#374151;font-size:13px;">${formatPriceOrFree(i.subtotal)}</td>
     </tr>`;
   }).join('');
 }

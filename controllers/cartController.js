@@ -4,6 +4,7 @@ const { cart_items, modules, packages, product_skus, users } = require('../db/sc
 const { eq, and, sql } = require('drizzle-orm');
 const { presentCart } = require('../presenters/cartPresenter');
 const { isSalutActive } = require('../config/constants');
+const { checkSalutSem1Eligibility, cartContainsProduct } = require('../services/claimRules');
 
 async function getUserSalutActive(userId) {
   const u = await db.query.users.findFirst({
@@ -213,6 +214,18 @@ async function updateItem(req, res) {
   try {
     const cart = await getOrCreateCart(req.user.id);
 
+    // Guard claim-gated SKUs: quantity must stay at 1. Reject (don't silently clamp)
+    // so any tampering attempt is visible.
+    const existing = await db.query.cart_items.findFirst({
+      columns: { id: true },
+      where: and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)),
+      with: { product_skus: { columns: { id: true }, with: { products: { columns: { claim_rule: true } } } } },
+    });
+    if (!existing) return res.status(404).json({ error: 'Item tidak ditemukan' });
+    if (existing.product_skus?.products?.claim_rule === 'salut_sem1_once' && quantity !== 1) {
+      return res.status(400).json({ error: 'Almet gratis hanya bisa diklaim 1 unit per anggota' });
+    }
+
     const [data] = await db.update(cart_items)
       .set({ quantity })
       .where(and(eq(cart_items.id, itemId), eq(cart_items.cart_id, cart.id)))
@@ -292,7 +305,7 @@ async function addMerch(req, res) {
     const sku = await db.query.product_skus.findFirst({
       columns: { id: true, price: true, option_names: true },
       where: eq(product_skus.id, skuId),
-      with: { products: { columns: { id: true, name: true } } },
+      with: { products: { columns: { id: true, name: true, claim_rule: true } } },
     });
 
     if (!sku) return res.status(404).json({ error: 'SKU tidak ditemukan' });
@@ -302,7 +315,20 @@ async function addMerch(req, res) {
       : null;
 
     const cart = await getOrCreateCart(req.user.id);
-    const qty = Math.max(1, parseInt(quantity) || 1);
+
+    // Claim-gated products: enforce eligibility, qty=1, and one entry per product.
+    const isClaimGated = sku.products.claim_rule === 'salut_sem1_once';
+    let qty;
+    if (isClaimGated) {
+      qty = 1;
+      const eligibility = await checkSalutSem1Eligibility(req.user.id, sku.products.id);
+      if (!eligibility.ok) return res.status(eligibility.status).json({ error: eligibility.error });
+      if (await cartContainsProduct(cart.id, sku.products.id)) {
+        return res.status(409).json({ error: 'Almet gratis sudah ada di keranjang' });
+      }
+    } else {
+      qty = Math.max(1, parseInt(quantity) || 1);
+    }
 
     await db.insert(cart_items)
       .values({
@@ -318,7 +344,8 @@ async function addMerch(req, res) {
       .onConflictDoUpdate({
         target: [cart_items.cart_id, cart_items.sku_id],
         set: {
-          quantity: sql`${cart_items.quantity} + ${qty}`,
+          // Claim-gated SKUs are pinned to qty=1; everything else bumps by qty.
+          quantity: isClaimGated ? sql`1` : sql`${cart_items.quantity} + ${qty}`,
           price_snapshot: sku.price,
           variant_label: variantLabel,
           product_name_snapshot: sku.products.name,

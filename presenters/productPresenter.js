@@ -1,12 +1,12 @@
 'use strict';
 
-const { formatIDR, rewriteStorageUrl } = require('../format');
+const { formatPriceOrFree, rewriteStorageUrl } = require('../format');
 
 function presentProductListItem(p) {
   return {
     ...p,
     cover_image_url: rewriteStorageUrl(p.cover_image_url),
-    base_price_display: p.base_price != null ? formatIDR(Number(p.base_price)) : null,
+    base_price_display: formatPriceOrFree(p.base_price),
   };
 }
 
@@ -20,9 +20,9 @@ function presentProduct(p) {
     })),
     product_skus: (p.product_skus || []).map((sku) => ({
       ...sku,
-      price_display: sku.price != null ? formatIDR(Number(sku.price)) : null,
+      price_display: formatPriceOrFree(sku.price),
     })),
-    base_price_display: p.base_price != null ? formatIDR(Number(p.base_price)) : null,
+    base_price_display: formatPriceOrFree(p.base_price),
   };
 }
 

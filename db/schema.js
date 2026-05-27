@@ -193,6 +193,7 @@ const products = pgTable('products', {
   description:  text('description'),
   base_price:   numeric('base_price', { precision: 12, scale: 2 }).notNull(),
   weight_grams: integer('weight_grams').notNull().default(0),
+  claim_rule:   varchar('claim_rule', { length: 50 }),
   created_at:   tsz('created_at').defaultNow(),
   updated_at:   tsz('updated_at').defaultNow(),
 });
