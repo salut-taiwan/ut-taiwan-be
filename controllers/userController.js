@@ -1,18 +1,45 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { db } = require('../db');
-const { users } = require('../db/schema');
-const { eq, and, ne, or, ilike, inArray, asc, desc } = require('drizzle-orm');
+const { users, programs } = require('../db/schema');
+const { eq, and, ne, or, ilike, inArray, asc, desc, sql } = require('drizzle-orm');
 const emailService = require('../services/emailService');
 const { nextSalutExpiry } = require('../config/constants');
 const { formatDate, formatNTD } = require('../format');
 
-const ALLOWED_SORT_COLS = new Set(['name', 'nim', 'created_at']);
+const SORT_MAP = {
+  name:             users.name,
+  nim:              users.nim,
+  email:            users.email,
+  created_at:       users.created_at,
+  current_semester: users.current_semester,
+  salut_status:     users.salut_status,
+  program:          programs.name,
+};
+
+const ALLOWED_SALUT_STATUSES = new Set(['none', 'pending', 'approved', 'rejected', 'expired']);
+
+const DEFAULT_LIMIT = 25;
+const MAX_LIMIT = 100;
+
+function clampInt(raw, min, max, fallback) {
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
 
 async function listUsers(req, res) {
-  const { search, sort, dir, salut } = req.query;
+  const {
+    search, sort, dir,
+    salut,                                    // back-compat: true|false (is_salut)
+    salut_status, is_verified, program_id, semester,
+    limit: limitRaw, offset: offsetRaw,
+  } = req.query;
 
-  const sortCol = ALLOWED_SORT_COLS.has(sort) ? sort : 'created_at';
+  const sortCol = SORT_MAP[sort] ? sort : 'created_at';
   const sortDir = dir === 'asc' ? asc : desc;
+
+  const limit = clampInt(limitRaw, 1, MAX_LIMIT, DEFAULT_LIMIT);
+  const offset = Math.max(0, clampInt(offsetRaw, 0, Number.MAX_SAFE_INTEGER, 0));
 
   try {
     const conditions = [eq(users.role, 'student')];
@@ -23,26 +50,83 @@ async function listUsers(req, res) {
         ilike(users.name, term),
         ilike(users.email, term),
         ilike(users.nim, term),
+        ilike(users.phone, term),
+        ilike(programs.name, term),
+        ilike(programs.code, term),
       ));
     }
 
     if (salut === 'true') conditions.push(eq(users.is_salut, true));
     else if (salut === 'false') conditions.push(eq(users.is_salut, false));
 
-    const data = await db.query.users.findMany({
-      columns: {
-        id: true, email: true, name: true, nim: true, phone: true,
-        current_semester: true, role: true, is_verified: true, is_salut: true, salut_status: true, created_at: true,
-      },
-      where: and(...conditions),
-      orderBy: sortDir(users[sortCol]),
-      with: { programs: { columns: { code: true, name: true } } },
-    });
+    if (ALLOWED_SALUT_STATUSES.has(salut_status)) {
+      conditions.push(eq(users.salut_status, salut_status));
+    }
 
-    res.json(data.map((u) => ({
-      ...u,
-      created_at_display: formatDate(u.created_at),
-    })));
+    if (is_verified === 'true') conditions.push(eq(users.is_verified, true));
+    else if (is_verified === 'false') conditions.push(eq(users.is_verified, false));
+
+    if (program_id) conditions.push(eq(users.program_id, program_id));
+
+    const semesterNum = Number.parseInt(semester, 10);
+    if (Number.isInteger(semesterNum) && semesterNum >= 1 && semesterNum <= 9) {
+      conditions.push(eq(users.current_semester, semesterNum));
+    }
+
+    const whereClause = and(...conditions);
+
+    const rowsQuery = db
+      .select({
+        id:               users.id,
+        email:            users.email,
+        name:             users.name,
+        nim:              users.nim,
+        phone:            users.phone,
+        current_semester: users.current_semester,
+        role:             users.role,
+        is_verified:      users.is_verified,
+        is_salut:         users.is_salut,
+        salut_status:     users.salut_status,
+        created_at:       users.created_at,
+        program_code:     programs.code,
+        program_name:     programs.name,
+      })
+      .from(users)
+      .leftJoin(programs, eq(users.program_id, programs.id))
+      .where(whereClause)
+      .orderBy(sortDir(SORT_MAP[sortCol]))
+      .limit(limit)
+      .offset(offset);
+
+    const countQuery = db
+      .select({ count: sql`count(*)::int` })
+      .from(users)
+      .leftJoin(programs, eq(users.program_id, programs.id))
+      .where(whereClause);
+
+    const [rows, countResult] = await Promise.all([rowsQuery, countQuery]);
+    const total = countResult[0]?.count ?? 0;
+
+    res.json({
+      rows: rows.map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        nim: u.nim,
+        phone: u.phone,
+        current_semester: u.current_semester,
+        role: u.role,
+        is_verified: u.is_verified,
+        is_salut: u.is_salut,
+        salut_status: u.salut_status,
+        created_at: u.created_at,
+        programs: u.program_code ? { code: u.program_code, name: u.program_name } : null,
+        created_at_display: formatDate(u.created_at),
+      })),
+      total,
+      limit,
+      offset,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

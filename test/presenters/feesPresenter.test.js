@@ -29,6 +29,11 @@ function makeRawFees() {
     ],
     totalServiceFees: SALUT_FEES.ONGKIR + SALUT_FEES.BOX + SALUT_FEES.ADMIN,
     serviceFeesCurrency: 'IDR',
+    paymentBank: {
+      bank: 'BCA',
+      account: '2950211345',
+      holder: 'Nathasya Vira Nerisa',
+    },
   };
 }
 
@@ -72,5 +77,15 @@ describe('presentFees', () => {
     assert.equal(out.salutMembership.returning, 1200);
     assert.equal(out.serviceFees[0].amount, SALUT_FEES.ONGKIR);
     assert.equal(out.totalServiceFees, SALUT_FEES.ONGKIR + SALUT_FEES.BOX + SALUT_FEES.ADMIN);
+  });
+
+  test('passes paymentBank through unchanged', () => {
+    const raw = makeRawFees();
+    const out = presentFees(raw);
+    assert.deepEqual(out.paymentBank, {
+      bank: 'BCA',
+      account: '2950211345',
+      holder: 'Nathasya Vira Nerisa',
+    });
   });
 });

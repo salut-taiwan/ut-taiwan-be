@@ -174,7 +174,7 @@ const templates = {
 
   salutApproved({ name, expiresAt }) {
     const expiryLine = expiresAt
-      ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap tahun pada 1 Mei.</p>`
+      ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap semester (1 Mei dan 1 November).</p>`
       : '';
     return {
       subject: 'Keanggotaan SALUT Anda telah disetujui',

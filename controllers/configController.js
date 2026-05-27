@@ -1,4 +1,4 @@
-const { SALUT_FEES, SALUT_MEMBERSHIP } = require('../config/constants');
+const { SALUT_FEES, SALUT_MEMBERSHIP, PAYMENT_BANK } = require('../config/constants');
 const { presentFees } = require('../presenters/feesPresenter');
 const { listBanks } = require('../config/banks');
 
@@ -12,6 +12,7 @@ function getFees(req, res) {
       renewalPolicy: {
         resetMonth: SALUT_MEMBERSHIP.EXPIRY_MONTH,
         resetDay: SALUT_MEMBERSHIP.EXPIRY_DAY,
+        resetDates: SALUT_MEMBERSHIP.EXPIRY_DATES,
         timezone: SALUT_MEMBERSHIP.EXPIRY_TIMEZONE,
         notice: SALUT_MEMBERSHIP.RENEWAL_NOTICE,
       },
@@ -23,6 +24,11 @@ function getFees(req, res) {
     ],
     totalServiceFees: SALUT_FEES.ONGKIR + SALUT_FEES.BOX + SALUT_FEES.ADMIN,
     serviceFeesCurrency: 'IDR',
+    paymentBank: {
+      bank: PAYMENT_BANK.bank,
+      account: PAYMENT_BANK.account,
+      holder: PAYMENT_BANK.holder,
+    },
   };
   res.json(presentFees(raw));
 }

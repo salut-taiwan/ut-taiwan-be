@@ -1,22 +1,43 @@
 const { db } = require('../db');
 const { products } = require('../db/schema');
-const { eq, asc } = require('drizzle-orm');
+const { eq, asc, sql } = require('drizzle-orm');
 const { presentProduct, presentProductList } = require('../presenters/productPresenter');
 
+const PRODUCTS_DEFAULT_LIMIT = 24;
+const PRODUCTS_MAX_LIMIT = 100;
+
+function clampInt(raw, min, max, fallback) {
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 async function listProducts(req, res) {
-  const { category } = req.query;
+  const { category, limit: limitRaw, offset: offsetRaw } = req.query;
+  const limit = clampInt(limitRaw, 1, PRODUCTS_MAX_LIMIT, PRODUCTS_DEFAULT_LIMIT);
+  const offset = Math.max(0, clampInt(offsetRaw, 0, Number.MAX_SAFE_INTEGER, 0));
+
   try {
-    const data = await db.query.products.findMany({
-      columns: {
-        id: true, tokopedia_id: true, category: true, name: true,
-        base_price: true, weight_grams: true,
-      },
-      where: category ? eq(products.category, category) : undefined,
-      orderBy: asc(products.name),
-      with: {
-        product_images: { columns: { image_url: true, sort_order: true } },
-      },
-    });
+    const whereClause = category ? eq(products.category, category) : undefined;
+
+    const [data, countResult] = await Promise.all([
+      db.query.products.findMany({
+        columns: {
+          id: true, tokopedia_id: true, category: true, name: true,
+          base_price: true, weight_grams: true,
+        },
+        where: whereClause,
+        orderBy: asc(products.name),
+        limit,
+        offset,
+        with: {
+          product_images: { columns: { image_url: true, sort_order: true } },
+        },
+      }),
+      db.select({ count: sql`count(*)::int` }).from(products).where(whereClause),
+    ]);
+
+    const total = countResult[0]?.count ?? 0;
 
     const result = data.map(p => {
       const images = (p.product_images || []).sort((a, b) => a.sort_order - b.sort_order);
@@ -30,7 +51,13 @@ async function listProducts(req, res) {
         cover_image_url: images[0]?.image_url ?? null,
       };
     });
-    res.json(presentProductList(result));
+
+    res.json({
+      rows: presentProductList(result),
+      total,
+      limit,
+      offset,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

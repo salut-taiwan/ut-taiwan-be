@@ -1,38 +1,79 @@
 const { db } = require('../db');
 const { packages, package_modules, subjects, subject_modules } = require('../db/schema');
-const { eq, and, asc, inArray } = require('drizzle-orm');
+const { eq, and, or, ilike, asc, inArray, sql } = require('drizzle-orm');
 const { presentPackage } = require('../presenters/packagePresenter');
 
+const PACKAGES_DEFAULT_LIMIT = 9;
+const PACKAGES_MAX_LIMIT = 200;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function clampInt(raw, min, max, fallback) {
+  const n = Number.parseInt(raw, 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function escapeIlike(s) {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 async function listPackages(req, res) {
-  const { programId, semester } = req.query;
+  const { programId, semester, search, limit: limitRaw, offset: offsetRaw } = req.query;
+  const limit = clampInt(limitRaw, 1, PACKAGES_MAX_LIMIT, PACKAGES_DEFAULT_LIMIT);
+  const offset = Math.max(0, clampInt(offsetRaw, 0, Number.MAX_SAFE_INTEGER, 0));
+
   try {
     const conditions = [eq(packages.is_active, true)];
-    if (programId) conditions.push(eq(packages.program_id, programId));
-    if (semester) conditions.push(eq(packages.semester, parseInt(semester)));
 
-    const data = await db.query.packages.findMany({
-      columns: { id: true, name: true, description: true, semester: true, is_active: true, program_id: true },
-      where: and(...conditions),
-      orderBy: asc(packages.semester),
-      with: {
-        programs: { columns: { id: true, code: true, name: true } },
-        package_modules: {
-          columns: { sort_order: true },
-          with: {
-            modules: {
-              columns: { id: true, tbo_code: true, name: true, cover_image_url: true, price_student: true, is_available: true },
+    if (programId && UUID_RE.test(programId)) {
+      conditions.push(eq(packages.program_id, programId));
+    }
+
+    const semesterNum = Number.parseInt(semester, 10);
+    if (Number.isInteger(semesterNum) && semesterNum >= 1 && semesterNum <= 9) {
+      conditions.push(eq(packages.semester, semesterNum));
+    }
+
+    if (search && search.trim()) {
+      const term = `%${escapeIlike(search.trim())}%`;
+      conditions.push(or(
+        ilike(packages.name, term),
+        ilike(packages.description, term),
+      ));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [data, countResult] = await Promise.all([
+      db.query.packages.findMany({
+        columns: { id: true, name: true, description: true, semester: true, is_active: true, program_id: true },
+        where: whereClause,
+        orderBy: asc(packages.semester),
+        limit,
+        offset,
+        with: {
+          programs: { columns: { id: true, code: true, name: true } },
+          package_modules: {
+            columns: { sort_order: true },
+            with: {
+              modules: {
+                columns: { id: true, tbo_code: true, name: true, cover_image_url: true, price_student: true, is_available: true },
+              },
             },
           },
         },
-      },
-    });
+      }),
+      db.select({ count: sql`count(*)::int` }).from(packages).where(whereClause),
+    ]);
 
-    const result = data.map(pkg => presentPackage({
+    const total = countResult[0]?.count ?? 0;
+
+    const rows = data.map(pkg => presentPackage({
       ...pkg,
       totalPrice: (pkg.package_modules || []).reduce((sum, pm) => sum + Number(pm.modules?.price_student || 0), 0),
     }));
 
-    res.json(result);
+    res.json({ rows, total, limit, offset });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

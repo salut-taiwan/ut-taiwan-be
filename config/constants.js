@@ -2,15 +2,20 @@ const SALUT_MEMBERSHIP = {
   CURRENCY: 'NTD',
   PRICE_NEW: 1700,
   PRICE_RETURNING: 1200,
-  EXPIRY_MONTH: 5, // May
+  EXPIRY_MONTH: 5, // May (primary reset, kept for back-compat in payloads)
   EXPIRY_DAY: 1,   // 1st
+  EXPIRY_DATES: [
+    { month: 5, day: 1 },  // May 1
+    { month: 11, day: 1 }, // November 1
+  ],
   EXPIRY_TIMEZONE: 'Asia/Taipei',
-  RENEWAL_NOTICE: 'Keanggotaan SALUT berakhir setiap 1 Mei pukul 00:00 (Asia/Taipei). Perpanjangan wajib dilakukan setiap tahun.',
+  RENEWAL_NOTICE: 'Keanggotaan SALUT berakhir setiap 1 Mei dan 1 November pukul 00:00 (Asia/Taipei). Perpanjangan wajib dilakukan setiap semester.',
 };
 
-// May 1 boundary in Asia/Taipei. Taipei is UTC+8 with no DST, so May 1 00:00 Taipei = April 30 16:00 UTC of the same year.
-function may1UTC(year) {
-  return new Date(Date.UTC(year, SALUT_MEMBERSHIP.EXPIRY_MONTH - 1, SALUT_MEMBERSHIP.EXPIRY_DAY, 0, 0, 0) - 8 * 60 * 60 * 1000);
+// Convert a boundary date (year/month/day, 00:00 Asia/Taipei) to UTC.
+// Taipei is UTC+8 with no DST, so 00:00 Taipei = (previous day) 16:00 UTC.
+function boundaryUTC(year, month, day) {
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - 8 * 60 * 60 * 1000);
 }
 
 function getSalutMembershipFee(currentSemester) {
@@ -19,21 +24,34 @@ function getSalutMembershipFee(currentSemester) {
     : { amount: SALUT_MEMBERSHIP.PRICE_RETURNING, currency: SALUT_MEMBERSHIP.CURRENCY, tier: 'returning' };
 }
 
-function nextSalutExpiry(fromDate = new Date()) {
-  const year = fromDate.getUTCFullYear();
-  const thisYearMay1 = may1UTC(year);
-  return fromDate < thisYearMay1 ? thisYearMay1 : may1UTC(year + 1);
+function allBoundariesAround(year) {
+  const years = [year - 1, year, year + 1];
+  const boundaries = [];
+  for (const y of years) {
+    for (const { month, day } of SALUT_MEMBERSHIP.EXPIRY_DATES) {
+      boundaries.push(boundaryUTC(y, month, day));
+    }
+  }
+  return boundaries.sort((a, b) => a - b);
 }
 
-function mostRecentMay1Before(now = new Date()) {
-  const year = now.getUTCFullYear();
-  const thisYearMay1 = may1UTC(year);
-  return now < thisYearMay1 ? may1UTC(year - 1) : thisYearMay1;
+function nextSalutExpiry(fromDate = new Date()) {
+  const boundaries = allBoundariesAround(fromDate.getUTCFullYear());
+  return boundaries.find((b) => b > fromDate);
+}
+
+function mostRecentExpiryBefore(now = new Date()) {
+  const boundaries = allBoundariesAround(now.getUTCFullYear());
+  let latest = null;
+  for (const b of boundaries) {
+    if (b <= now) latest = b;
+  }
+  return latest;
 }
 
 function isSalutActive(approvedAt, now = new Date()) {
   if (!approvedAt) return false;
-  return new Date(approvedAt) >= mostRecentMay1Before(now);
+  return new Date(approvedAt) >= mostRecentExpiryBefore(now);
 }
 
 module.exports = {
@@ -55,6 +73,6 @@ module.exports = {
   SALUT_MEMBERSHIP,
   getSalutMembershipFee,
   nextSalutExpiry,
-  mostRecentMay1Before,
+  mostRecentExpiryBefore,
   isSalutActive,
 };
