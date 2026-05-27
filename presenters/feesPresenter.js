@@ -1,10 +1,13 @@
 'use strict';
 
 const { formatIDR, formatNTD } = require('../format');
+const { formatExpiryDate } = require('../format/datetime');
+const { nextSalutExpiry } = require('../config/constants');
 
 function presentFees(dto) {
   const newDisplay = formatNTD(dto.salutMembership.new);
   const returningDisplay = formatNTD(dto.salutMembership.returning);
+  const nextRenewal = nextSalutExpiry();
   return {
     ...dto,
     salutMembership: {
@@ -14,6 +17,10 @@ function presentFees(dto) {
       new_label: `${newDisplay} (semester 1)`,
       returning_label: `${returningDisplay} (semester 2+)`,
       tier_combined_display: `${newDisplay} (semester 1) atau ${returningDisplay} (semester 2+)`,
+      renewalPolicy: {
+        ...dto.salutMembership.renewalPolicy,
+        next_renewal_date_display: nextRenewal ? formatExpiryDate(nextRenewal.toISOString()) : null,
+      },
     },
     serviceFees: dto.serviceFees.map((f) => ({
       ...f,
