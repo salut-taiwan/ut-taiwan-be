@@ -58,6 +58,15 @@ const SKS_PAYMENT = {
   RATE_IDR_PER_NTD: 560,
 };
 
+const SKS_PAYMENT_BANK = {
+  bank: 'Huanan',
+  account: '154-20-045849-2',
+  bank_code: '008',
+  swift_code: 'HNBKTWTP',
+  holder: 'Fadila Arum Rhamadani',
+  currency: 'NTD',
+};
+
 function quoteNtdFromIdr(idr) {
   const rate = SKS_PAYMENT.RATE_IDR_PER_NTD;
   const idrNum = Number(idr);
@@ -93,5 +102,6 @@ module.exports = {
   mostRecentExpiryBefore,
   isSalutActive,
   SKS_PAYMENT,
+  SKS_PAYMENT_BANK,
   quoteNtdFromIdr,
 };

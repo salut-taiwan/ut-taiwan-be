@@ -1,4 +1,4 @@
-const { SALUT_FEES, SALUT_MEMBERSHIP, PAYMENT_BANK, SKS_PAYMENT } = require('../config/constants');
+const { SALUT_FEES, SALUT_MEMBERSHIP, PAYMENT_BANK, SKS_PAYMENT, SKS_PAYMENT_BANK } = require('../config/constants');
 const { presentFees } = require('../presenters/feesPresenter');
 const { listBanks } = require('../config/banks');
 
@@ -31,6 +31,14 @@ function getFees(req, res) {
     },
     sksPayment: {
       rate_idr_per_ntd: SKS_PAYMENT.RATE_IDR_PER_NTD,
+      payment_bank: {
+        bank: SKS_PAYMENT_BANK.bank,
+        account: SKS_PAYMENT_BANK.account,
+        bank_code: SKS_PAYMENT_BANK.bank_code,
+        swift_code: SKS_PAYMENT_BANK.swift_code,
+        holder: SKS_PAYMENT_BANK.holder,
+        currency: SKS_PAYMENT_BANK.currency,
+      },
     },
   };
   res.json(presentFees(raw));

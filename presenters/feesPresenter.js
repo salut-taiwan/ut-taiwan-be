@@ -35,10 +35,11 @@ function presentFees(dto) {
 
   // sksPayment: present only the display string. Deliberately drop the raw
   // rate_idr_per_ntd so the FE cannot do its own NTD math; all conversion
-  // goes through /sks-payment/quote.
+  // goes through /sks-payment/quote. payment_bank passes through verbatim.
   if (dto.sksPayment) {
     presented.sksPayment = {
       rate_label: `Rp ${formatIdrPlain(dto.sksPayment.rate_idr_per_ntd)} / NT$ 1`,
+      payment_bank: dto.sksPayment.payment_bank,
     };
   }
 
