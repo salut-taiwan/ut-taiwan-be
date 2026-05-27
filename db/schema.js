@@ -333,10 +333,33 @@ const packageModulesRelations = relations(package_modules, ({ one }) => ({
   modules:  one(modules,  { fields: [package_modules.module_id],  references: [modules.id]  }),
 }));
 
+const sks_payments = pgTable('sks_payments', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  user_id:            uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  nim:                varchar('nim', { length: 20 }).notNull(),
+  name:               text('name').notNull(),
+  semester_period:    text('semester_period').notNull(),
+  idr_amount:         numeric('idr_amount', { precision: 14, scale: 2 }).notNull(),
+  ntd_amount:         numeric('ntd_amount', { precision: 10, scale: 2 }).notNull(),
+  rate_idr_per_ntd:   numeric('rate_idr_per_ntd', { precision: 8, scale: 2 }).notNull(),
+  ut_slip_url:        text('ut_slip_url').notNull(),
+  transfer_proof_url: text('transfer_proof_url').notNull(),
+  status:             varchar('status', { length: 20 }).default('pending').notNull(),
+  rejection_reason:   text('rejection_reason'),
+  completed_at:       tsz('completed_at'),
+  created_at:         tsz('created_at').defaultNow().notNull(),
+  updated_at:         tsz('updated_at').defaultNow().notNull(),
+});
+
 const usersRelations = relations(users, ({ one, many }) => ({
-  programs: one(programs, { fields: [users.program_id], references: [programs.id] }),
-  carts:    many(carts),
-  orders:   many(orders),
+  programs:     one(programs, { fields: [users.program_id], references: [programs.id] }),
+  carts:        many(carts),
+  orders:       many(orders),
+  sks_payments: many(sks_payments),
+}));
+
+const sksPaymentsRelations = relations(sks_payments, ({ one }) => ({
+  users: one(users, { fields: [sks_payments.user_id], references: [users.id] }),
 }));
 
 const cartsRelations = relations(carts, ({ one, many }) => ({
@@ -422,6 +445,7 @@ module.exports = {
   orders,
   order_items,
   payments,
+  sks_payments,
   // relations
   facultiesRelations,
   programsRelations,
@@ -443,4 +467,5 @@ module.exports = {
   productSkusRelations,
   scraperRunsRelations,
   moduleHistoryRelations,
+  sksPaymentsRelations,
 };

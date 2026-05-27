@@ -83,6 +83,7 @@ app.use('/api/payments', require('./routes/payments'));
 app.use('/api/scraper', require('./routes/scraper'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/salut', require('./routes/salut'));
+app.use('/api/sks-payment', require('./routes/sksPayment'));
 app.use('/api/panduan', require('./routes/panduan'));
 app.use('/api/config', require('./routes/config'));
 app.use('/api/products', require('./routes/products'));

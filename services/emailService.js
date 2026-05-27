@@ -212,6 +212,45 @@ const templates = {
     };
   },
 
+  sksPaymentCompleted({ name, semester_period, idr_amount_display, ntd_amount_display }) {
+    return {
+      subject: `Pembayaran SKS Anda sudah diproses — ${semester_period}`,
+      html: `
+<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
+  <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+  <p>Halo <strong>${name}</strong>,</p>
+  <p>Pembayaran SKS Anda untuk <strong>${semester_period}</strong> telah selesai diproses. SALUT sudah meneruskan pembayaran ke Universitas Terbuka.</p>
+  <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:16px;margin:16px 0;">
+    <p style="margin:0 0 6px 0;color:#065f46;font-weight:600;">✓ Selesai</p>
+    <table style="width:100%;border-collapse:collapse;color:#047857;font-size:13px;">
+      <tr><td style="padding:3px 0;">Nominal tagihan:</td><td style="padding:3px 0;text-align:right;font-weight:600;">${idr_amount_display}</td></tr>
+      <tr><td style="padding:3px 0;">Anda transfer:</td><td style="padding:3px 0;text-align:right;font-weight:600;">${ntd_amount_display}</td></tr>
+    </table>
+  </div>
+  <p style="font-size:13px;color:#374151;">Anda dapat melihat seluruh riwayat pembayaran SKS Anda di halaman <strong>Bantuan Bayar SKS</strong>. Jika ada pertanyaan, hubungi kami di <a href="mailto:pengurus.uttaiwan@gmail.com" style="color:#4f46e5;">pengurus.uttaiwan@gmail.com</a>.</p>
+</div>`,
+    };
+  },
+
+  sksPaymentRejected({ name, semester_period, idr_amount_display, reason }) {
+    return {
+      subject: `Pembayaran SKS Anda tidak dapat diproses — ${semester_period}`,
+      html: `
+<div style="font-family:sans-serif;max-width:560px;margin:auto;padding:24px;color:#111827;">
+  <h2 style="color:#4f46e5;margin-bottom:4px;">UT Taiwan</h2>
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;">
+  <p>Halo <strong>${name}</strong>,</p>
+  <p>Mohon maaf, pembayaran SKS Anda untuk <strong>${semester_period}</strong> (nominal ${idr_amount_display}) belum dapat kami proses.</p>
+  <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin:16px 0;">
+    <p style="margin:0 0 6px 0;color:#991b1b;font-weight:600;">Alasan:</p>
+    <p style="margin:0;color:#b91c1c;font-size:13px;">${reason}</p>
+  </div>
+  <p style="font-size:13px;color:#374151;">Silakan periksa kembali data dan bukti transfer Anda lalu ajukan ulang melalui halaman <strong>Bantuan Bayar SKS</strong>. Jika ada pertanyaan atau perlu pengembalian dana, hubungi kami di <a href="mailto:pengurus.uttaiwan@gmail.com" style="color:#4f46e5;">pengurus.uttaiwan@gmail.com</a>.</p>
+</div>`,
+    };
+  },
+
   requestItemsResolved({ name, orderNumber, approved, rejected }) {
     const approvedRows = approved.map(n =>
       `<tr><td style="padding:5px 0;color:#065f46;font-size:13px;">✓ ${n}</td></tr>`
@@ -305,6 +344,14 @@ async function sendSalutRejected({ email, ...params }) {
   await _send({ to: email, ...templates.salutRejected(params) });
 }
 
+async function sendSksPaymentCompleted({ email, ...params }) {
+  await _send({ to: email, ...templates.sksPaymentCompleted(params) });
+}
+
+async function sendSksPaymentRejected({ email, ...params }) {
+  await _send({ to: email, ...templates.sksPaymentRejected(params) });
+}
+
 async function sendRequestItemsResolved({ email, ...params }) {
   await _send({ to: email, ...templates.requestItemsResolved(params) });
 }
@@ -322,6 +369,8 @@ module.exports = {
   sendOrderCancelled,
   sendSalutApproved,
   sendSalutRejected,
+  sendSksPaymentCompleted,
+  sendSksPaymentRejected,
   sendRequestItemsResolved,
   sendPaymentReceipt,
   templates,

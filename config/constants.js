@@ -54,6 +54,23 @@ function isSalutActive(approvedAt, now = new Date()) {
   return new Date(approvedAt) >= mostRecentExpiryBefore(now);
 }
 
+const SKS_PAYMENT = {
+  RATE_IDR_PER_NTD: 560,
+};
+
+function quoteNtdFromIdr(idr) {
+  const rate = SKS_PAYMENT.RATE_IDR_PER_NTD;
+  const idrNum = Number(idr);
+  if (!Number.isFinite(idrNum) || idrNum <= 0) {
+    return null;
+  }
+  return {
+    idr_amount: idrNum,
+    ntd_amount: Math.ceil(idrNum / rate),
+    rate_idr_per_ntd: rate,
+  };
+}
+
 module.exports = {
   PAYMENT_EXPIRY_MS: 5 * 24 * 60 * 60 * 1000,
   CONFIRM_DEADLINE_MS: 10.5 * 24 * 60 * 60 * 1000,
@@ -75,4 +92,6 @@ module.exports = {
   nextSalutExpiry,
   mostRecentExpiryBefore,
   isSalutActive,
+  SKS_PAYMENT,
+  quoteNtdFromIdr,
 };
