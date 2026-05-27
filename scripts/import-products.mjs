@@ -126,9 +126,11 @@ const NAMED_COLOR_HEX = {
   // Indonesian: tua (dark) / muda (light) modifiers
   'merah tua': '#7F1D1D',
   'merah muda': '#F472B6',
+  'merah bata': '#B0413E',
   'biru tua': '#1E3A8A',
   'biru muda': '#60A5FA',
   'biru dongker': '#1E3A8A',
+  'biru toska': '#06B6D4',
   'hijau tua': '#166534',
   'hijau muda': '#86EFAC',
   'hijau army': '#4B5320',
