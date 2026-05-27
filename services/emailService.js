@@ -249,9 +249,28 @@ async function _send(payload) {
     console.log('[Email] RESEND_API_KEY not set — skipping send:', payload.subject);
     return;
   }
-  const { data, error } = await resend.emails.send({ from: env.EMAIL_FROM, ...payload });
-  if (error) console.error('[Email] send failed:', error);
-  else console.log('[Email] sent id:', data.id);
+  try {
+    const { data, error } = await resend.emails.send({ from: env.EMAIL_FROM, ...payload });
+    if (error) {
+      console.error('[Email] send failed', {
+        from: env.EMAIL_FROM,
+        to: payload.to,
+        subject: payload.subject,
+        name: error.name,
+        message: error.message,
+        statusCode: error.statusCode,
+      });
+      return;
+    }
+    console.log('[Email] sent', { id: data?.id, to: payload.to, subject: payload.subject });
+  } catch (err) {
+    console.error('[Email] send threw', {
+      from: env.EMAIL_FROM,
+      to: payload.to,
+      subject: payload.subject,
+      message: err?.message,
+    });
+  }
 }
 
 async function sendPaymentRequest({ email, ...params }) {
