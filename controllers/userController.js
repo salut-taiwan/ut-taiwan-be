@@ -4,6 +4,7 @@ const { users, programs } = require('../db/schema');
 const { eq, and, ne, or, ilike, inArray, asc, desc, sql } = require('drizzle-orm');
 const emailService = require('../services/emailService');
 const { nextSalutExpiry } = require('../config/constants');
+const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 const { formatDate, formatNTD } = require('../format');
 
 const SORT_MAP = {
@@ -156,6 +157,12 @@ async function updateUserSalut(req, res) {
     if (!data) return res.status(404).json({ error: 'User not found' });
     res.json(data);
 
+    emitUserStatusUpdate(userId, {
+      is_salut: !!is_salut,
+      is_salut_active: !!is_salut,
+      salut_status: is_salut ? 'approved' : 'none',
+    });
+
     if (is_salut) {
       emailService.sendSalutApproved({
         email: data.email,
@@ -191,7 +198,16 @@ async function bulkUpdateUserSalut(req, res) {
       .where(and(inArray(users.id, userIds), eq(users.role, 'student')))
       .returning({ id: users.id });
 
-    res.json({ updated: data?.length ?? 0 });
+    const updated = data?.length ?? 0;
+    res.json({ updated });
+
+    for (const uid of (data ?? []).map(u => u.id)) {
+      emitUserStatusUpdate(uid, {
+        is_salut: !!is_salut,
+        is_salut_active: !!is_salut,
+        salut_status: is_salut ? 'approved' : 'none',
+      });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -273,6 +289,7 @@ async function approveSalutApplication(req, res) {
       });
 
     res.json(data);
+    emitUserStatusUpdate(userId, { is_salut: true, is_salut_active: true, salut_status: 'approved' });
     emailService.sendSalutApproved({
       email: data.email,
       name: data.name,
@@ -314,6 +331,7 @@ async function rejectSalutApplication(req, res) {
       });
 
     res.json(data);
+    emitUserStatusUpdate(userId, { is_salut: false, is_salut_active: false, salut_status: 'rejected' });
     emailService.sendSalutRejected({ email: data.email, name: data.name, reason }).catch(() => {});
   } catch (err) {
     res.status(500).json({ error: err.message });

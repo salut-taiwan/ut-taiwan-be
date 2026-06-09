@@ -37,4 +37,30 @@ async function authMiddleware(req, res, next) {
   next();
 }
 
+async function authenticateSSE(req, res, next) {
+  const token = req.query.token;
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (data.user.email_confirmed_at) {
+      try {
+        await db.update(users)
+          .set({ is_verified: true })
+          .where(and(eq(users.id, data.user.id), eq(users.is_verified, false)));
+      } catch (err) {
+        console.error('[authenticateSSE] is_verified heal failed:', err.message);
+      }
+    }
+
+    req.user = data.user;
+    req.token = token;
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+}
+
 module.exports = authMiddleware;
+module.exports.authenticateSSE = authenticateSSE;

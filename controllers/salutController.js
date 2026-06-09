@@ -10,6 +10,7 @@ const {
   isSalutActive,
 } = require('../config/constants');
 const { presentSalutStatus } = require('../presenters/salutPresenter');
+const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -99,6 +100,8 @@ async function applyForMembership(req, res) {
         salut_applied_semester: resolvedSemester,
       })
       .where(eq(users.id, req.user.id));
+
+    emitUserStatusUpdate(req.user.id, { is_salut: false, is_salut_active: false, salut_status: 'pending' });
 
     res.json({
       message: 'Permohonan berhasil dikirim',

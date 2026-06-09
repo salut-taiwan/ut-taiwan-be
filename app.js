@@ -63,6 +63,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 // routes. The upstream URL is anchored to SUPABASE_URL — no SSRF risk.
 app.use('/api/storage', require('./routes/storage'));
 
+// SSE — long-lived connections; must be before rate limiter so keep-alive
+// connections don't consume the per-IP request budget on every ping.
+app.use('/api/sse', require('./routes/sse'));
+
 // Rate limiting (applied only to data routes below)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
