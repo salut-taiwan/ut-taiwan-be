@@ -9,7 +9,7 @@ const {
   getRequestStatusLabel,
   addressToLines,
 } = require('../format');
-const { ORDER_STEPS, SALUT_FEES, CONFIRM_DEADLINE_MS } = require('../config/constants');
+const { ORDER_STEPS, CONFIRM_DEADLINE_MS } = require('../config/constants');
 const { presentPayment } = require('./paymentPresenter');
 
 // --- Steps & progress ------------------------------------------------------
@@ -33,39 +33,16 @@ function buildOrderSteps(currentStatus) {
 
 // --- Fee lines --------------------------------------------------------------
 //
-// IMPORTANT: for SALUT orders, the original (pre-discount) amount must come
-// from SALUT_FEES constants, NOT from the order's stored shipping_cost/box_fee/
-// admin_fee columns (which are zero for SALUT orders). This preserves the
-// strikethrough/discount display even if the user is de-SALUTed later.
+// For SALUT orders, the original (pre-discount) amounts come from SALUT_FEES
+// constants (not DB columns, which are zero), preserving the strikethrough
+// display even after the user is de-SALUTed. See presenters/feeLines.js.
 
-const FEE_LINE_DEFS = [
-  { key: 'shipping', label: 'Ongkir',      original: SALUT_FEES.ONGKIR, column: 'shippingCost' },
-  { key: 'box',      label: 'Biaya Box',   original: SALUT_FEES.BOX,    column: 'boxFee' },
-  { key: 'admin',    label: 'Biaya Admin', original: SALUT_FEES.ADMIN,  column: 'adminFee' },
-];
+const { buildFeeLines: _buildFeeLines } = require('./feeLines');
 
 function buildFeeLines({ shippingCost = 0, boxFee = 0, adminFee = 0, isSalutOrder = false }) {
-  const cols = { shippingCost: Number(shippingCost), boxFee: Number(boxFee), adminFee: Number(adminFee) };
-  return FEE_LINE_DEFS.map((def) => {
-    if (isSalutOrder) {
-      return {
-        key: def.key,
-        label: def.label,
-        amount: 0,
-        amount_display: formatIDR(0),
-        is_waived: true,
-        original_amount: def.original,
-        original_amount_display: formatIDR(def.original),
-      };
-    }
-    const amount = cols[def.column];
-    return {
-      key: def.key,
-      label: def.label,
-      amount,
-      amount_display: formatIDR(amount),
-      is_waived: false,
-    };
+  return _buildFeeLines({
+    amounts: [Number(shippingCost), Number(boxFee), Number(adminFee)],
+    isSalut: isSalutOrder,
   });
 }
 

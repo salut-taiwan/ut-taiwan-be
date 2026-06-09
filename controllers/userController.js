@@ -19,14 +19,10 @@ const SORT_MAP = {
 
 const ALLOWED_SALUT_STATUSES = new Set(['none', 'pending', 'approved', 'rejected', 'expired']);
 
+const { clampInt, escapeIlike } = require('../utils/pagination');
+
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
-
-function clampInt(raw, min, max, fallback) {
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
 
 async function listUsers(req, res) {
   const {
@@ -46,7 +42,7 @@ async function listUsers(req, res) {
     const conditions = [eq(users.role, 'student')];
 
     if (search && search.trim()) {
-      const term = `%${search.trim()}%`;
+      const term = `%${escapeIlike(search.trim())}%`;
       conditions.push(or(
         ilike(users.name, term),
         ilike(users.email, term),
@@ -168,7 +164,7 @@ async function updateUserSalut(req, res) {
         email: data.email,
         name: data.name,
         expiresAt: nextSalutExpiry(new Date()).toISOString(),
-      }).catch(() => {});
+      }).catch((err) => console.error('[email] send failed:', err.message));
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -294,7 +290,7 @@ async function approveSalutApplication(req, res) {
       email: data.email,
       name: data.name,
       expiresAt: nextSalutExpiry(approvedAt).toISOString(),
-    }).catch(() => {});
+    }).catch((err) => console.error('[email] send failed:', err.message));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -332,7 +328,7 @@ async function rejectSalutApplication(req, res) {
 
     res.json(data);
     emitUserStatusUpdate(userId, { is_salut: false, is_salut_active: false, salut_status: 'rejected' });
-    emailService.sendSalutRejected({ email: data.email, name: data.name, reason }).catch(() => {});
+    emailService.sendSalutRejected({ email: data.email, name: data.name, reason }).catch((err) => console.error('[email] send failed:', err.message));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

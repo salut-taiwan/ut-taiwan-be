@@ -34,11 +34,6 @@ cron.schedule('0 19 * * *', () => {
   scheduledRun('cron');
 });
 
-// Availability check: every 6 hours
-cron.schedule('0 */6 * * *', () => {
-  console.log('[Cron] Starting availability check');
-  // TODO: Implement lighter availability-only scrape
-});
 
 console.log('[Scraper] Cron scheduler started. Full sync at 02:00 WIB daily.');
 

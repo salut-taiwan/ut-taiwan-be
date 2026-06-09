@@ -3,19 +3,11 @@ const { packages, package_modules, subjects, subject_modules } = require('../db/
 const { eq, and, or, ilike, asc, inArray, sql } = require('drizzle-orm');
 const { presentPackage } = require('../presenters/packagePresenter');
 
+const { clampInt, escapeIlike } = require('../utils/pagination');
+
 const PACKAGES_DEFAULT_LIMIT = 9;
 const PACKAGES_MAX_LIMIT = 200;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function clampInt(raw, min, max, fallback) {
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
-
-function escapeIlike(s) {
-  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
-}
 
 async function listPackages(req, res) {
   const { programId, semester, search, limit: limitRaw, offset: offsetRaw } = req.query;
@@ -103,7 +95,7 @@ async function getPackage(req, res) {
     );
     res.json(presentPackage(data));
   } catch (err) {
-    res.status(404).json({ error: 'Paket tidak ditemukan' });
+    res.status(500).json({ error: err.message });
   }
 }
 

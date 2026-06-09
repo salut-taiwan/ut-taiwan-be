@@ -33,6 +33,11 @@ const REQUEST_STATUS_LABELS = Object.freeze({
   rejected: 'Ditolak',
 });
 
+/**
+ * @param {Record<string,string>} map
+ * @param {string|null|undefined} key
+ * @returns {string|null}
+ */
 function lookup(map, key) {
   if (key === null || key === undefined) return null;
   return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : null;

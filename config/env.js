@@ -35,11 +35,11 @@ const env = {
   EMAIL_FROM: unquote(process.env.EMAIL_FROM) || 'UT Taiwan <noreply@ut-taiwan.com>',
 };
 
-const required = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY'];
+const required = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'DATABASE_URL'];
 const recommended = ['RESEND_API_KEY'];
 for (const key of required) {
   if (!env[key]) {
-    console.warn(`Warning: Missing environment variable ${key}`);
+    throw new Error(`Missing required environment variable: ${key}`);
   }
 }
 for (const key of recommended) {

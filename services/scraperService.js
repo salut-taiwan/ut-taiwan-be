@@ -124,6 +124,19 @@ async function _runScraperCore(runId, scraperFn, label) {
     modulesRemoved = result.removed;
 
     console.log(`[${label}] Run ${runId} complete: +${modulesAdded} ~${modulesUpdated} -${modulesRemoved}`);
+    try {
+      await db.update(scraper_runs)
+        .set({
+          finished_at: new Date(),
+          status: 'success',
+          modules_added: modulesAdded,
+          modules_updated: modulesUpdated,
+          modules_removed: modulesRemoved,
+        })
+        .where(eq(scraper_runs.id, runId));
+    } catch (dbErr) {
+      console.error(`[${label}] Failed to write success status for run ${runId}:`, dbErr.message);
+    }
   } catch (err) {
     console.error(`[${label}] Run ${runId} failed:`, err.message);
     await db.update(scraper_runs)
@@ -139,10 +152,19 @@ async function _runScraperCore(runId, scraperFn, label) {
   }
 }
 
+/**
+ * Execute a full TBO catalog scrape for the given scraper_runs record.
+ * Updates the record to 'success' or 'failed' on completion.
+ * @param {string} runId - UUID of the scraper_runs row
+ */
 async function runScraper(runId) {
   return _runScraperCore(runId, runFullScraper, 'Scraper');
 }
 
+/**
+ * Execute a prefix-only TBO scrape (faster; only fetches CATALOG_PREFIXES list).
+ * @param {string} runId - UUID of the scraper_runs row
+ */
 async function runPrefixScraperService(runId) {
   return _runScraperCore(runId, runPrefixScraper, 'Scraper-Prefix');
 }

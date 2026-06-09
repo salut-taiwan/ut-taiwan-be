@@ -4,9 +4,12 @@ const { users } = require('../db/schema');
 const { eq, and } = require('drizzle-orm');
 
 /**
- * Verify Supabase JWT from Authorization: Bearer <token>
+ * Verify Supabase JWT from Authorization: Bearer <token>.
  * Attaches req.user on success. Lazy-heals users.is_verified when the JWT
  * shows email_confirmed_at but the DB column hasn't been mirrored yet.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
  */
 async function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -37,6 +40,13 @@ async function authMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * SSE variant of authMiddleware — reads the token from the `token` query param
+ * instead of the Authorization header (EventSource API cannot set headers).
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ */
 async function authenticateSSE(req, res, next) {
   const token = req.query.token;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });

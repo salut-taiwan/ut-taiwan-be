@@ -90,7 +90,7 @@ async function getModule(req, res) {
     if (!data) return res.status(404).json({ error: 'Modul tidak ditemukan' });
     res.json(presentModule(data));
   } catch (err) {
-    res.status(404).json({ error: 'Modul tidak ditemukan' });
+    res.status(500).json({ error: err.message });
   }
 }
 

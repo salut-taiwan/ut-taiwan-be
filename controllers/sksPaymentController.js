@@ -10,19 +10,14 @@ const { formatIDR, formatNTD } = require('../format');
 const { presentSksPayment, presentAdminSksPayment } = require('../presenters/sksPaymentPresenter');
 const emailService = require('../services/emailService');
 
+const { validateUpload, extFromMime } = require('../utils/validateUpload');
+
 const BUCKET = 'sks-payment-files';
-const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
-const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const MAX_IDR_AMOUNT = 100_000_000;
 const MAX_SEMESTER_PERIOD_LEN = 30;
 const MAX_NIM_LEN = 20;
 const MAX_NAME_LEN = 120;
 const MAX_REASON_LEN = 500;
-
-function extFromMime(mime) {
-  const map = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
-  return map[mime] || 'bin';
-}
 
 function firstNameOf(name) {
   if (!name || typeof name !== 'string') return '';
@@ -30,14 +25,9 @@ function firstNameOf(name) {
 }
 
 async function uploadFile(req, res, kind /* 'slip' | 'proof' */) {
+  const uploadError = validateUpload(req.file);
+  if (uploadError) return res.status(400).json({ error: uploadError });
   const file = req.file;
-  if (!file) return res.status(400).json({ error: 'File wajib diunggah' });
-  if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-    return res.status(400).json({ error: 'Format file tidak didukung (JPG, PNG, WebP, atau PDF)' });
-  }
-  if (file.size > MAX_SIZE_BYTES) {
-    return res.status(400).json({ error: 'Ukuran file maksimal 5 MB' });
-  }
 
   const ext = extFromMime(file.mimetype);
   const storagePath = `${req.user.id}/${kind}_${Date.now()}_${uuid()}.${ext}`;
@@ -239,7 +229,7 @@ async function completeSksPayment(req, res) {
         semester_period: row.semester_period,
         idr_amount_display: formatIDR(Number(row.idr_amount)),
         ntd_amount_display: formatNTD(Number(row.ntd_amount)),
-      }).catch(() => {});
+      }).catch((err) => console.error('[email] send failed:', err.message));
     }
   } catch (err) {
     console.error('[sksPayment complete] error:', err);
@@ -284,7 +274,7 @@ async function rejectSksPayment(req, res) {
         semester_period: row.semester_period,
         idr_amount_display: formatIDR(Number(row.idr_amount)),
         reason: trimmed,
-      }).catch(() => {});
+      }).catch((err) => console.error('[email] send failed:', err.message));
     }
   } catch (err) {
     console.error('[sksPayment reject] error:', err);

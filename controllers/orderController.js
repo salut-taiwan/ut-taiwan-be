@@ -1,7 +1,7 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { db } = require('../db');
 const { orders, order_items, payments, users, carts, cart_items } = require('../db/schema');
-const { eq, and, desc, count } = require('drizzle-orm');
+const { eq, and, desc, count, sql } = require('drizzle-orm');
 const paymentService = require('../services/paymentService');
 const emailService = require('../services/emailService');
 const orderEmailService = require('../services/orderEmailService');
@@ -221,7 +221,7 @@ async function checkout(req, res) {
 
   orderEmailService.fetchOrderEmailPayload(rpcData.order.id)
     .then(p => p && emailService.sendOrderConfirmation(p))
-    .catch(() => {});
+    .catch((err) => console.error('[email] send failed:', err.message));
 }
 
 async function listOrders(req, res) {
@@ -277,7 +277,7 @@ async function getOrder(req, res) {
 
     res.json(presentOrderDetail(order));
   } catch (err) {
-    res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+    res.status(500).json({ error: err.message });
   }
 }
 
@@ -299,7 +299,7 @@ async function cancelOrder(req, res) {
 
   orderEmailService.fetchOrderEmailPayload(id)
     .then(p => p && emailService.sendOrderCancelled(p))
-    .catch(() => {});
+    .catch((err) => console.error('[email] send failed:', err.message));
 }
 
 async function listAllOrders(req, res) {
@@ -469,6 +469,24 @@ async function updateRequestItemStatus(req, res) {
       return res.status(400).json({ error: 'Masukkan harga untuk item ini sebelum menyetujui' });
     }
 
+    // Guard: must run BEFORE the update so we can return an error without a rollback.
+    // Uses IS DISTINCT FROM to correctly include items with NULL request_status (non-request modules).
+    // remaining <= 1 means this item is the last non-rejected one; rejecting it would empty the order.
+    if (status === 'rejected') {
+      const [{ remaining }] = await db
+        .select({ remaining: count() })
+        .from(order_items)
+        .where(and(
+          eq(order_items.order_id, orderId),
+          sql`request_status IS DISTINCT FROM 'rejected'`,
+        ));
+      if (Number(remaining) <= 1) {
+        return res.status(400).json({
+          error: 'Tidak dapat menolak semua item — batalkan pesanan jika tidak ada yang bisa dipenuhi',
+        });
+      }
+    }
+
     const updatePayload = { request_status: status };
     if (status === 'approved' && unit_price !== undefined) {
       updatePayload.unit_price = unit_price;
@@ -484,41 +502,35 @@ async function updateRequestItemStatus(req, res) {
 
     const needsRecalc = status === 'rejected' || (status === 'approved' && unit_price !== undefined);
     if (needsRecalc) {
-      const allItems = await db
-        .select({ subtotal: order_items.subtotal, request_status: order_items.request_status })
-        .from(order_items)
-        .where(eq(order_items.order_id, orderId));
 
-      const newSubtotal = allItems
-        .filter(i => i.request_status !== 'rejected')
-        .reduce((sum, i) => sum + Number(i.subtotal), 0);
+      // Atomic: recalculate subtotal and total_amount in a single UPDATE so
+      // concurrent admin approvals on the same order don't produce stale totals.
+      await db.execute(sql`
+        UPDATE orders
+        SET
+          subtotal     = (
+            SELECT COALESCE(SUM(oi.subtotal), 0)
+            FROM order_items oi
+            WHERE oi.order_id = ${orderId} AND oi.request_status IS DISTINCT FROM 'rejected'
+          ),
+          total_amount = (
+            SELECT COALESCE(SUM(oi.subtotal), 0)
+            FROM order_items oi
+            WHERE oi.order_id = ${orderId} AND oi.request_status IS DISTINCT FROM 'rejected'
+          ) + shipping_cost + box_fee + admin_fee,
+          updated_at   = NOW()
+        WHERE id = ${orderId}
+      `);
 
-      if (status === 'rejected' && newSubtotal <= 0) {
-        return res.status(400).json({
-          error: 'Tidak dapat menolak semua item — batalkan pesanan jika tidak ada yang bisa dipenuhi',
-        });
-      }
-
-      const orderFees = await db.query.orders.findFirst({
-        columns: { shipping_cost: true, box_fee: true, admin_fee: true },
-        where: eq(orders.id, orderId),
-      });
-      const fees = Number(orderFees?.shipping_cost ?? 0) + Number(orderFees?.box_fee ?? 0) + Number(orderFees?.admin_fee ?? 0);
-      const newTotalAmount = newSubtotal + fees;
-
-      await db.update(orders)
-        .set({ subtotal: newSubtotal, total_amount: newTotalAmount, updated_at: new Date() })
-        .where(eq(orders.id, orderId));
-
-      const existingPayment = await db.query.payments.findFirst({
-        columns: { unique_code: true },
-        where: and(eq(payments.order_id, orderId), eq(payments.status, 'pending')),
-      });
-      const paymentUniqueCode = existingPayment?.unique_code ?? 0;
-
-      await db.update(payments)
-        .set({ amount: newTotalAmount + paymentUniqueCode })
-        .where(and(eq(payments.order_id, orderId), eq(payments.status, 'pending')));
+      // Keep pending payment amount in sync.
+      await db.execute(sql`
+        UPDATE payments p
+        SET amount = o.total_amount + COALESCE(p.unique_code, 0)
+        FROM orders o
+        WHERE p.order_id = ${orderId}
+          AND p.order_id = o.id
+          AND p.status = 'pending'
+      `);
     }
 
     res.json({ message: 'Status permintaan berhasil diperbarui', status });

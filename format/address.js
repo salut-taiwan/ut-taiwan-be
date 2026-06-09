@@ -4,6 +4,11 @@ function nonEmpty(v) {
   return v !== null && v !== undefined && String(v).trim() !== '';
 }
 
+/**
+ * Compose a Taiwanese street address line from structured fields.
+ * @param {{ zh_road?: string, zh_number?: string, zh_floor?: string }|null} addr
+ * @returns {string|null}
+ */
 function composeShippingAddressLine(addr) {
   if (!addr) return null;
   const parts = [
@@ -27,6 +32,11 @@ function composeCityLine(addr) {
     : districtCity;
 }
 
+/**
+ * Convert a structured address object to an array of display lines.
+ * @param {{ zh_road?: string, zh_number?: string, zh_floor?: string, zh_district?: string, zh_city?: string, postal_code?: string, country?: string, phone?: string }|null} addr
+ * @returns {string[]}
+ */
 function addressToLines(addr) {
   if (!addr) return [];
   const lines = [

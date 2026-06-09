@@ -2,33 +2,12 @@
 
 const { formatIDR, formatPriceOrFree, rewriteStorageUrl } = require('../format');
 const { SALUT_FEES } = require('../config/constants');
-
-const FEE_LINE_DEFS = [
-  { key: 'shipping', label: 'Ongkir',      amount: SALUT_FEES.ONGKIR },
-  { key: 'box',      label: 'Biaya Box',   amount: SALUT_FEES.BOX },
-  { key: 'admin',    label: 'Biaya Admin', amount: SALUT_FEES.ADMIN },
-];
+const { buildFeeLines: _buildFeeLines } = require('./feeLines');
 
 function buildFeeLines({ isSalutActive }) {
-  return FEE_LINE_DEFS.map((def) => {
-    if (isSalutActive) {
-      return {
-        key: def.key,
-        label: def.label,
-        amount: 0,
-        amount_display: formatIDR(0),
-        is_waived: true,
-        original_amount: def.amount,
-        original_amount_display: formatIDR(def.amount),
-      };
-    }
-    return {
-      key: def.key,
-      label: def.label,
-      amount: def.amount,
-      amount_display: formatIDR(def.amount),
-      is_waived: false,
-    };
+  return _buildFeeLines({
+    amounts: [SALUT_FEES.ONGKIR, SALUT_FEES.BOX, SALUT_FEES.ADMIN],
+    isSalut: isSalutActive,
   });
 }
 

@@ -283,6 +283,10 @@ const templates = {
   },
 };
 
+/**
+ * Dispatch a single email via Resend. Never throws — errors are logged.
+ * @param {{ to: string, subject: string, html: string }} payload
+ */
 async function _send(payload) {
   if (!env.RESEND_API_KEY) {
     console.log('[Email] RESEND_API_KEY not set — skipping send:', payload.subject);
@@ -312,6 +316,7 @@ async function _send(payload) {
   }
 }
 
+/** @param {{ email: string, name: string, orderNumber: string, totalAmount: number, items: Array<{module_code?:string,module_name:string,subtotal:number}>, bank: string, account: string, expiresAt: string }} params */
 async function sendPaymentRequest({ email, ...params }) {
   await _send({ to: email, ...templates.paymentRequest(params) });
 }
@@ -336,10 +341,12 @@ async function sendOrderCancelled({ email, ...params }) {
   await _send({ to: email, ...templates.orderCancelled(params) });
 }
 
+/** @param {{ email: string, name: string, expiresAt: string }} params */
 async function sendSalutApproved({ email, ...params }) {
   await _send({ to: email, ...templates.salutApproved(params) });
 }
 
+/** @param {{ email: string, name: string, reason: string }} params */
 async function sendSalutRejected({ email, ...params }) {
   await _send({ to: email, ...templates.salutRejected(params) });
 }
@@ -356,10 +363,6 @@ async function sendRequestItemsResolved({ email, ...params }) {
   await _send({ to: email, ...templates.requestItemsResolved(params) });
 }
 
-async function sendPaymentReceipt({ email, name, orderNumber, paidAt }) {
-  console.log(`[Email] Payment receipt for ${email} — ${orderNumber} — paid at ${paidAt}`);
-}
-
 module.exports = {
   sendPaymentRequest,
   sendPaymentConfirmed,
@@ -372,6 +375,5 @@ module.exports = {
   sendSksPaymentCompleted,
   sendSksPaymentRejected,
   sendRequestItemsResolved,
-  sendPaymentReceipt,
   templates,
 };

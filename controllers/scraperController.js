@@ -98,7 +98,7 @@ async function getRun(req, res) {
       })),
     });
   } catch (err) {
-    res.status(404).json({ error: 'Log scraper tidak ditemukan' });
+    res.status(500).json({ error: err.message });
   }
 }
 

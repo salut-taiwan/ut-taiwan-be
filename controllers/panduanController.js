@@ -1,6 +1,7 @@
 const { rewriteStorageUrl } = require('../format');
+const env = require('../config/env');
 
-const BASE = `${process.env.SUPABASE_URL}/storage/v1/object/public/panduan`;
+const BASE = `${env.SUPABASE_URL}/storage/v1/object/public/panduan`;
 
 const CATEGORIES = [
   {

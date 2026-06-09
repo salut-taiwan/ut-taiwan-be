@@ -35,6 +35,12 @@ function parseDate(iso) {
   return d;
 }
 
+/**
+ * Format an ISO date string using the Asia/Taipei timezone by default.
+ * @param {string|Date|null|undefined} iso
+ * @param {{ timeZone?: string }} [opts]
+ * @returns {string|null}
+ */
 function formatDate(iso, opts = {}) {
   const d = parseDate(iso);
   if (!d) return null;
@@ -42,6 +48,12 @@ function formatDate(iso, opts = {}) {
   return getDatetimeFormatter(tz).format(d);
 }
 
+/**
+ * Format an ISO date string as a SALUT membership expiry date (date only,
+ * no time, Asia/Taipei timezone).
+ * @param {string|Date|null|undefined} iso
+ * @returns {string|null}
+ */
 function formatExpiryDate(iso) {
   const d = parseDate(iso);
   if (!d) return null;

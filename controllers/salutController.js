@@ -12,8 +12,7 @@ const {
 const { presentSalutStatus } = require('../presenters/salutPresenter');
 const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 
-const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
-const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const { validateUpload, extFromMime } = require('../utils/validateUpload');
 
 const RENEWAL_POLICY_PAYLOAD = {
   resetMonth: SALUT_MEMBERSHIP.EXPIRY_MONTH,
@@ -23,20 +22,10 @@ const RENEWAL_POLICY_PAYLOAD = {
   notice: SALUT_MEMBERSHIP.RENEWAL_NOTICE,
 };
 
-function extFromMime(mime) {
-  const map = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
-  return map[mime] || 'bin';
-}
-
 async function uploadProof(req, res) {
+  const uploadError = validateUpload(req.file, 'File bukti pembayaran wajib diunggah');
+  if (uploadError) return res.status(400).json({ error: uploadError });
   const file = req.file;
-  if (!file) return res.status(400).json({ error: 'File bukti pembayaran wajib diunggah' });
-  if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-    return res.status(400).json({ error: 'Format file tidak didukung (JPG, PNG, WebP, atau PDF)' });
-  }
-  if (file.size > MAX_SIZE_BYTES) {
-    return res.status(400).json({ error: 'Ukuran file maksimal 5 MB' });
-  }
 
   const ext = extFromMime(file.mimetype);
   const storagePath = `${req.user.id}/${Date.now()}_${uuid()}.${ext}`;

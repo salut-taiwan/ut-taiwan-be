@@ -4,14 +4,10 @@ const { eq, asc, sql } = require('drizzle-orm');
 const { presentProduct, presentProductList } = require('../presenters/productPresenter');
 const { isSalutActive } = require('../config/constants');
 
+const { clampInt } = require('../utils/pagination');
+
 const PRODUCTS_DEFAULT_LIMIT = 24;
 const PRODUCTS_MAX_LIMIT = 100;
-
-function clampInt(raw, min, max, fallback) {
-  const n = Number.parseInt(raw, 10);
-  if (Number.isNaN(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
 
 async function listProducts(req, res) {
   const { category, limit: limitRaw, offset: offsetRaw } = req.query;
@@ -102,7 +98,7 @@ async function getProduct(req, res) {
 
     res.json(presentProduct(product));
   } catch (err) {
-    res.status(404).json({ error: 'Produk tidak ditemukan' });
+    res.status(500).json({ error: err.message });
   }
 }
 
