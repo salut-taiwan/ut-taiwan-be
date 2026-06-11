@@ -95,6 +95,12 @@ module.exports = {
   },
   ORDER_STEPS: ['pending', 'awaiting_payment', 'paid', 'processing', 'shipped', 'delivered'],
   PAYMENT_BANK: { bank: 'BCA', account: '2950211345', holder: 'Nathasya Vira Nerisa' },
+  CHAT_WIDGET: {
+    GREETING_ENABLED: true,
+    GREETING_TEXT: 'Aku bisa jawab semua pertanyaan kamu sini, serius deh. 👋',
+    GREETING_SHOW_DELAY_MS: 1500,
+    GREETING_AUTO_HIDE_MS: 8000,
+  },
   SALUT_FEES: { ONGKIR: 300000, BOX: 100000, ADMIN: 25000 },
   SALUT_MEMBERSHIP,
   getSalutMembershipFee,

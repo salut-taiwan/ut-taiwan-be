@@ -1,4 +1,4 @@
-const { SALUT_FEES, SALUT_MEMBERSHIP, PAYMENT_BANK, SKS_PAYMENT, SKS_PAYMENT_BANK } = require('../config/constants');
+const { SALUT_FEES, SALUT_MEMBERSHIP, PAYMENT_BANK, SKS_PAYMENT, SKS_PAYMENT_BANK, CHAT_WIDGET } = require('../config/constants');
 const { presentFees } = require('../presenters/feesPresenter');
 const { listBanks } = require('../config/banks');
 
@@ -53,4 +53,15 @@ function getBanks(req, res) {
   res.json({ currency, banks });
 }
 
-module.exports = { getFees, getBanks };
+function getChatWidget(req, res) {
+  res.json({
+    greeting: {
+      enabled: CHAT_WIDGET.GREETING_ENABLED,
+      text: CHAT_WIDGET.GREETING_TEXT,
+      showDelayMs: CHAT_WIDGET.GREETING_SHOW_DELAY_MS,
+      autoHideMs: CHAT_WIDGET.GREETING_AUTO_HIDE_MS,
+    },
+  });
+}
+
+module.exports = { getFees, getBanks, getChatWidget };
