@@ -333,3 +333,64 @@ describe('GET and PUT /api/auth/me', () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe('signing out and asking for the verification email again', () => {
+  test('signing out succeeds', async () => {
+    setup();
+
+    const res = await post('/api/auth/logout').set('Authorization', 'Bearer t');
+
+    assert.equal(res.status, 200);
+    assert.match(res.body.message, /Logout/);
+  });
+
+  test('a resend needs an address to send to', async () => {
+    setup();
+
+    const res = await post('/api/auth/resend-verification', {});
+
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /Email/);
+  });
+
+  test('a resend for a real address is accepted', async () => {
+    setup();
+
+    const res = await post('/api/auth/resend-verification', { email: 'budi@example.com' });
+
+    assert.equal(res.status, 200);
+    assert.match(res.body.message, /verifikasi/i);
+  });
+
+  test('the verification link brings the student back to login, not to a blank page', async () => {
+    // The harness records only getUser, so the resend arguments are captured
+    // here.
+    const asked = [];
+    harness = stubBackend({
+      user: studentUser({ id: AUTH_ID }),
+      query: { users: { findFirst: async () => null } },
+      auth: { resend: async (opts) => { asked.push(opts); return { error: null }; } },
+    });
+
+    await post('/api/auth/resend-verification', { email: 'budi@example.com' });
+
+    assert.equal(asked[0].type, 'signup');
+    assert.equal(asked[0].email, 'budi@example.com');
+    assert.match(asked[0].options.emailRedirectTo, /\/login\?verified=true$/);
+  });
+
+  test('a refusal from the auth provider is passed on rather than claiming success', async () => {
+    // Resending too often is rate-limited upstream; telling the student it
+    // worked would leave them waiting for an email that never comes.
+    harness = stubBackend({
+      user: studentUser({ id: AUTH_ID }),
+      query: { users: { findFirst: async () => null } },
+      auth: { resend: async () => ({ error: { message: 'For security purposes, you can only request this after 51 seconds' } }) },
+    });
+
+    const res = await post('/api/auth/resend-verification', { email: 'budi@example.com' });
+
+    assert.equal(res.status, 400);
+    assert.match(res.body.error, /51 seconds/);
+  });
+});
