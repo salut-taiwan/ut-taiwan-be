@@ -12,7 +12,16 @@ const { Resend } = require('resend');
 const env = require('../config/env');
 const { formatIDR, formatPriceOrFree, formatDate, formatExpiryDate } = require('../format');
 
-const resend = new Resend(env.RESEND_API_KEY);
+// Constructed on first send, not at require time. The Resend constructor
+// throws when the key is missing, which used to take the whole process down at
+// boot — even though config/env.js treats the key as optional and _send below
+// is written to skip sending without it. A deployment with no key could not
+// start at all.
+let resendClient = null;
+function getResend() {
+  resendClient ??= new Resend(env.RESEND_API_KEY);
+  return resendClient;
+}
 
 // Emails are read in Indonesia → use Jakarta timezone for date stamps.
 function emailDate(iso) {
@@ -296,7 +305,7 @@ async function _send(payload) {
     return;
   }
   try {
-    const { data, error } = await resend.emails.send({ from: env.EMAIL_FROM, ...payload });
+    const { data, error } = await getResend().emails.send({ from: env.EMAIL_FROM, ...payload });
     if (error) {
       console.error('[Email] send failed', {
         from: env.EMAIL_FROM,
