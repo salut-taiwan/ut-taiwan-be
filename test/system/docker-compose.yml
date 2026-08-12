@@ -1,0 +1,40 @@
+name: ut-taiwan-systest
+
+services:
+  db:
+    # Match the major version of the real Supabase project.
+    image: postgres:15-alpine
+    container_name: ut-taiwan-systest-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ut_taiwan_test
+      PGDATA: /var/lib/postgresql/data
+    command:
+      - postgres
+      # This database is disposable and lives in RAM, so durability is waste.
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      # Concurrency tests hold several connections at once.
+      - -c
+      - max_connections=60
+      # A locking regression should surface as a fast error, not a hung suite.
+      - -c
+      - deadlock_timeout=200ms
+      - -c
+      - log_min_messages=warning
+    ports:
+      # Deliberately not 5432 — never collide with a developer's own Postgres.
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data:rw,size=512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ut_taiwan_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 40
+      start_period: 2s

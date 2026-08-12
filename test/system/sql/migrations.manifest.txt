@@ -1,0 +1,53 @@
+# Ordered migration manifest for the system test tier.
+#
+# WHY THIS FILE EXISTS: migrations/ has duplicate numbers — two 005s (one of
+# them empty), two 006s, two 007s — so "sort the directory" is ambiguous. This
+# file is the single explicit ordering. Entries resolve against
+# test/system/sql/ first, then ../../migrations/. A listed file that does not
+# exist is a hard error.
+#
+# Adding a migration to migrations/ without listing it here (or under SKIP
+# below) fails the drift check in apply.js.
+
+# --- Supabase-managed schemas the migrations assume (test tier only) --------
+000_supabase_stubs.sql
+
+# --- Base schema ------------------------------------------------------------
+001_initial_schema.sql
+002_seed_catalog.sql
+
+# SKIP 003_seed_subjects.sql            3485 lines of subject rows
+# SKIP 004_seed_packages.sql            3510 lines of package rows
+# SKIP 012_seed_placeholder_modules.sql 5587 lines of module rows
+# Those three are data-only and add ~1.9 MB to every run. System tests build
+# the exact catalog rows they need through factories instead.
+
+# --- RPCs and incremental schema, duplicate numbers made explicit -----------
+005_transaction_rpcs.sql          # checkout_order v1, cancel_order
+005_add_shipped_at.sql            # empty file, kept so the drift check passes
+006_scraper_transaction_rpc.sql   # apply_scraper_changes, get_or_create_cart
+006_add_bank_fields.sql
+007_confirm_payment_rpc.sql       # confirm_payment v1
+007_add_birth_fields.sql
+008_add_address_zh_fields.sql
+009_add_awaiting_payment_status.sql
+010_fix_confirm_payment_rpc.sql   # confirm_payment v2 — the live one
+011_request_items.sql             # checkout_order v2 (same signature: replaces)
+013_payment_uploads.sql
+014_unique_code.sql               # checkout_order 23-arg OVERLOAD
+015_add_is_salut.sql
+016_salut_fees.sql                # checkout_order 25-arg OVERLOAD
+017_fix_checkout_rpc.sql          # checkout_order 26-arg OVERLOAD
+018_salut_applications.sql        # writes storage.buckets — needs 000
+019_add_products.sql
+020_update_checkout_rpc.sql       # checkout_order 26-arg — the live one
+021_fix_module_code_nullable.sql
+022_salut_tier_and_reset.sql
+023_backfill_variant_hex_colors.sql
+024_extend_variant_hex_colors.sql
+025_almet_salut_free_product.sql
+026_mirror_paid_almet_to_free.sql
+027_sks_payments.sql
+028_fix_merch_request_items.sql
+029_salut_wa_number.sql
+030_drop_stale_checkout_overloads.sql

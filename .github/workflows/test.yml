@@ -1,0 +1,88 @@
+name: test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Unit and integration tests
+        run: npm test
+        env:
+          # config/env.js throws at require time without these. The values are
+          # never dialled: postgres.js connects lazily and every client is
+          # stubbed by test/helpers/testApp.js.
+          NODE_ENV: test
+          DATABASE_URL: postgres://test:test@127.0.0.1:5432/test
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+
+      - name: Coverage
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://test:test@127.0.0.1:5432/test
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+
+  system:
+    # The only tier that exercises the stored procedures for real: locking,
+    # the in-transaction availability re-check, rollback, and the numeric
+    # column mapping. Also catches a migration that does not parse, or one
+    # nobody added to the manifest.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ut_taiwan_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+
+      - name: Apply the migration manifest
+        run: node test/system/sql/apply.js
+        env:
+          SYSTEST_DB_URL: postgres://postgres:postgres@127.0.0.1:5432/ut_taiwan_test
+
+      - name: Stored procedure and schema tests
+        run: npm run test:system
+        env:
+          # Provided, so the tier uses this service container instead of trying
+          # to start its own via Docker Compose.
+          SYSTEST_DB_URL: postgres://postgres:postgres@127.0.0.1:5432/ut_taiwan_test
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/ut_taiwan_test
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: test-service-role-key

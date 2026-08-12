@@ -9,6 +9,10 @@
     "scraper": "node scraper/index.js",
     "test": "node --test --test-reporter=spec 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'",
     "test:watch": "node --test --watch --test-reporter=spec 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'",
+    "test:system": "node --test --test-reporter=spec --test-concurrency=1 --test-timeout=60000 'test/system/**/*.test.js'",
+    "test:system:up": "docker compose -f test/system/docker-compose.yml up -d --wait",
+    "test:system:down": "docker compose -f test/system/docker-compose.yml down -v",
+    "test:all": "npm test && npm run test:system",
     "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-coverage-exclude='test/**' --test-coverage-exclude='scripts/**' --test-coverage-exclude='scraper/tboScraper.js' --test-coverage-exclude='scraper/tokopediaScraper.js' --test-coverage-exclude='scraper/runTokopedia.js' --test-coverage-exclude='scraper/index.js' --test-coverage-exclude='db/schema.js' --test-coverage-exclude='drizzle/**' --test-coverage-exclude='migrations/**' 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'"
   },
   "dependencies": {
