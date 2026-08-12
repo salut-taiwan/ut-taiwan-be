@@ -116,7 +116,12 @@ async function checkout(req, res) {
 
   const subtotal = cartItems.reduce((sum, i) => sum + Number(i.price_snapshot) * i.quantity, 0);
   const totalAmount = subtotal + ongkir + boxFee + adminFee;
-  const uniqueCode = Math.floor(Math.random() * 500) + 100;
+  // The unique code exists so an incoming bank transfer can be matched to an
+  // order. A free order — a SALUT member claiming the almet, with fees waived —
+  // has nothing to transfer, and adding a code asked them to pay Rp 100-500 for
+  // something free. The payment row itself stays: confirm_payment refuses to
+  // advance an order without a pending one.
+  const uniqueCode = totalAmount > 0 ? Math.floor(Math.random() * 500) + 100 : 0;
   const orderNumber = generateOrderNumber();
 
   // Validated before the gateway is called: a bad code used to be rejected only

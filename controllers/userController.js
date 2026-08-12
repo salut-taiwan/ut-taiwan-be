@@ -189,20 +189,31 @@ async function bulkUpdateUserSalut(req, res) {
     : { salut_status: 'none', salut_approved_at: null, salut_rejection_reason: null };
 
   try {
+    // email and name are returned so the approval notice can be sent: approving
+    // in bulk used to notify nobody, and the live status push only reaches a
+    // tab the student still has open.
     const data = await db.update(users)
       .set({ is_salut, ...salutStatusFields })
       .where(and(inArray(users.id, userIds), eq(users.role, 'student')))
-      .returning({ id: users.id });
+      .returning({ id: users.id, email: users.email, name: users.name });
 
-    const updated = data?.length ?? 0;
-    res.json({ updated });
+    const rows = data ?? [];
+    res.json({ updated: rows.length });
 
-    for (const uid of (data ?? []).map(u => u.id)) {
-      emitUserStatusUpdate(uid, {
+    for (const row of rows) {
+      emitUserStatusUpdate(row.id, {
         is_salut: !!is_salut,
         is_salut_active: !!is_salut,
         salut_status: is_salut ? 'approved' : 'none',
       });
+    }
+
+    if (is_salut) {
+      const expiresAt = nextSalutExpiry(new Date()).toISOString();
+      for (const row of rows) {
+        emailService.sendSalutApproved({ email: row.email, name: row.name, expiresAt })
+          .catch((err) => console.error('[email] send failed:', err.message));
+      }
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

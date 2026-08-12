@@ -9,6 +9,12 @@
  *   2. Creates the 'products' storage bucket if it doesn't exist
  *   3. Downloads each product image and uploads to Supabase Storage
  *   4. Upserts products, images, variant types, options, and SKUs
+ *
+ * Prices set outside the scraper are left alone. A product whose stored price
+ * differs from the scraped one keeps the stored value, and claim-gated
+ * products are skipped entirely — migration 025 repriced the almet and set the
+ * free variant to 0, and a re-run used to revert both without saying so.
+ * Pass --overwrite-prices to take the scraped figures anyway.
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -28,6 +34,7 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const BUCKET = 'products';
+const OVERWRITE_PRICES = process.argv.includes('--overwrite-prices');
 
 // Mirrors migrations/023_backfill_variant_hex_colors.sql.
 // Keep these two lists in sync when adding new color names.
@@ -219,6 +226,31 @@ async function importProduct(product) {
 
   const category = inferCategory(product.name);
 
+  // What is already stored decides whether the scraped price may be applied.
+  const { data: existing } = await supabase
+    .from('products')
+    .select('id, base_price, claim_rule')
+    .eq('tokopedia_id', product.id)
+    .maybeSingle();
+
+  // A claim-gated product's price is set deliberately by migration (the free
+  // almet is 0). The scraper has no business touching it.
+  if (existing?.claim_rule) {
+    console.log(`  ↷ skipped — claim-gated (${existing.claim_rule}), price is owned by a migration`);
+    return;
+  }
+
+  const storedPrice = existing ? Number(existing.base_price) : null;
+  const repricedByHand = storedPrice !== null && storedPrice !== Number(product.price);
+  if (repricedByHand && !OVERWRITE_PRICES) {
+    console.log(
+      `  ⚠ keeping Rp ${storedPrice.toLocaleString('id-ID')} ` +
+      `(scrape says Rp ${Number(product.price).toLocaleString('id-ID')}) — ` +
+      'use --overwrite-prices to take the scraped value',
+    );
+  }
+  const basePrice = repricedByHand && !OVERWRITE_PRICES ? storedPrice : product.price;
+
   // Upsert product
   const { data: saved, error: prodError } = await supabase
     .from('products')
@@ -227,7 +259,7 @@ async function importProduct(product) {
       category,
       name: product.name,
       description: product.description || null,
-      base_price: product.price,
+      base_price: basePrice,
       weight_grams: product.weight || 0,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'tokopedia_id' })
@@ -277,7 +309,22 @@ async function importProduct(product) {
     }
   }
 
-  // Insert SKUs
+  // Insert SKUs. They are rebuilt from scratch, so any price set outside the
+  // scraper has to be carried across explicitly — migration 026 mirrored the
+  // repriced almet onto every SKU, and a re-run used to undo all of them.
+  const { data: priorSkus } = await supabase
+    .from('product_skus')
+    .select('tokopedia_sku_id, price')
+    .eq('product_id', productId);
+  const priceBySkuId = new Map(
+    (priorSkus ?? []).map(s => [s.tokopedia_sku_id, Number(s.price)]),
+  );
+  const keepPrice = (tokopediaSkuId, scraped) => {
+    if (!repricedByHand || OVERWRITE_PRICES) return scraped;
+    const stored = priceBySkuId.get(tokopediaSkuId);
+    return stored === undefined ? scraped : stored;
+  };
+
   await supabase.from('product_skus').delete().eq('product_id', productId);
   const skus = product.variants?.skus || [];
 
@@ -286,7 +333,7 @@ async function importProduct(product) {
     await supabase.from('product_skus').insert({
       product_id: productId,
       tokopedia_sku_id: null,
-      price: product.price,
+      price: keepPrice(null, product.price),
       option_names: [],
     });
     console.log(`  skus: 1 (default, no variants)`);
@@ -296,7 +343,7 @@ async function importProduct(product) {
       .map(s => ({
         product_id: productId,
         tokopedia_sku_id: s.product_id,
-        price: s.price,
+        price: keepPrice(s.product_id, s.price),
         option_names: s.option_names || [],
       }));
     if (skuRows.length > 0) {
@@ -306,7 +353,7 @@ async function importProduct(product) {
     console.log(`  skus: ${skuRows.length}/${skus.length}`);
   }
 
-  console.log(`  ✓ category: ${category}, price: ${product.price}`);
+  console.log(`  ✓ category: ${category}, price: ${basePrice}`);
 }
 
 async function main() {

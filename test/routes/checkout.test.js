@@ -316,6 +316,50 @@ describe('checkout — amounts', () => {
     await post();
     assert.match(rpcParams(h).p_order_number, /^UT-\d{4}-\d{5}$/);
   });
+
+  test('a free order asks for nothing — no unique code, no amount', async () => {
+    // A semester-1 member claiming the free almet has fees waived, so the
+    // total is zero. Adding a unique code told them to transfer Rp 100-500 for
+    // something free.
+    const h = setup({
+      items: [merchLine({ price_snapshot: 0 })],
+      user: { is_salut: true, salut_approved_at: new Date().toISOString(), current_semester: 1 },
+    });
+
+    await post();
+
+    const p = rpcParams(h);
+    assert.equal(p.p_total_amount, 0);
+    assert.equal(p.p_unique_code, 0);
+    assert.equal(p.p_payment_amount, 0);
+  });
+
+  test('an order that costs anything still gets a code to match the transfer', async () => {
+    const h = setup({
+      user: { is_salut: true, salut_approved_at: new Date().toISOString(), current_semester: 1 },
+    });
+
+    await post();
+
+    const p = rpcParams(h);
+    assert.ok(p.p_total_amount > 0);
+    assert.ok(p.p_unique_code >= 100 && p.p_unique_code <= 599);
+  });
+
+  test('a zero-total order still gets a payment row, so it can be completed', async () => {
+    // confirm_payment refuses to advance an order with no pending payment, so
+    // dropping the row would strand every free order.
+    const h = setup({
+      items: [merchLine({ price_snapshot: 0 })],
+      user: { is_salut: true, salut_approved_at: new Date().toISOString(), current_semester: 1 },
+    });
+
+    await post();
+
+    const p = rpcParams(h);
+    assert.equal(p.p_payment_method, 'transfer');
+    assert.ok(p.p_payment_expires_at, 'the payment row is still created');
+  });
 });
 
 describe('checkout — items payload', () => {

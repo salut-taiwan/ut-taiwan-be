@@ -150,6 +150,51 @@ describe('PATCH /api/users/admin/salut/bulk', () => {
       .send({ userIds: ['u-1', 'u-2', 'u-3'], is_salut: true });
     assert.equal(res.body.updated, 2);
   });
+
+  test('every member approved in a batch is told, not just the ones done singly', async () => {
+    // Approving in bulk used to notify nobody: the live status push only
+    // reaches a tab the student still has open, so most never found out.
+    const h = setup({
+      update: updateChain([
+        { id: 'u-1', email: 'satu@example.com', name: 'Satu' },
+        { id: 'u-2', email: 'dua@example.com', name: 'Dua' },
+      ]),
+    });
+
+    await authed('patch', '/api/users/admin/salut/bulk')
+      .send({ userIds: ['u-1', 'u-2'], is_salut: true });
+
+    await h.email.next('sendSalutApproved');
+    const sent = h.email.of('sendSalutApproved');
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent.map(p => p.email).sort(), ['dua@example.com', 'satu@example.com']);
+  });
+
+  test('the batch notice carries the same expiry the single approval does', async () => {
+    const h = setup({
+      update: updateChain([{ id: 'u-1', email: 'satu@example.com', name: 'Satu' }]),
+    });
+
+    await authed('patch', '/api/users/admin/salut/bulk')
+      .send({ userIds: ['u-1'], is_salut: true });
+
+    const payload = await h.email.next('sendSalutApproved');
+    assert.ok(payload.expiresAt, 'the member needs to know when it lapses');
+    assert.ok(!Number.isNaN(Date.parse(payload.expiresAt)));
+  });
+
+  test('revoking membership in bulk emails nobody', async () => {
+    // There is no "your membership was removed" notice, and inventing one here
+    // would surprise people.
+    const h = setup({
+      update: updateChain([{ id: 'u-1', email: 'satu@example.com', name: 'Satu' }]),
+    });
+
+    await authed('patch', '/api/users/admin/salut/bulk')
+      .send({ userIds: ['u-1'], is_salut: false });
+
+    assert.deepEqual(h.email.of('sendSalutApproved'), []);
+  });
 });
 
 describe('GET /api/users/admin/salut/applications', () => {
