@@ -148,7 +148,8 @@ async function getClaimCta(req, res) {
          AND p.status      IN ('paid', 'refunded')
        LIMIT 1
     `);
-    if (claimedResult.rows && claimedResult.rows.length > 0) {
+    // postgres.js returns a Result that extends Array — there is no `.rows`.
+    if (claimedResult.length > 0) {
       return res.json({
         claim_cta: { state: 'already_claimed', label: 'Sudah Diklaim', disabled: true },
       });

@@ -52,7 +52,8 @@ app.use(cors({
 }));
 
 // Middleware
-app.use(logger('dev'));
+// Request logging is noise under test — the suite issues hundreds of requests.
+if (env.NODE_ENV !== 'test') app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
@@ -105,6 +106,11 @@ app.use((req, res, next) => {
 // Error handler
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
+  // Multer reports an oversized upload as a MulterError with no status, which
+  // would otherwise surface as a 500 for what is a client mistake.
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'Ukuran file maksimal 5 MB' });
+  }
   res.status(err.status || 500).json({
     error: err.message,
     ...(env.NODE_ENV === 'development' && { stack: err.stack }),

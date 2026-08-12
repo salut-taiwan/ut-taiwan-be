@@ -7,7 +7,9 @@
     "start": "node bin/www",
     "dev": "nodemon bin/www",
     "scraper": "node scraper/index.js",
-    "test": "node --test --test-reporter=spec 'test/**/*.test.js'"
+    "test": "node --test --test-reporter=spec 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'",
+    "test:watch": "node --test --watch --test-reporter=spec 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'",
+    "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-coverage-exclude='test/**' --test-coverage-exclude='scripts/**' --test-coverage-exclude='scraper/tboScraper.js' --test-coverage-exclude='scraper/tokopediaScraper.js' --test-coverage-exclude='scraper/runTokopedia.js' --test-coverage-exclude='scraper/index.js' --test-coverage-exclude='db/schema.js' --test-coverage-exclude='drizzle/**' --test-coverage-exclude='migrations/**' 'test/{config,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",

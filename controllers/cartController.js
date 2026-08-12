@@ -110,8 +110,15 @@ async function getCart(req, res) {
 }
 
 async function addItem(req, res) {
-  const { moduleId, quantity = 1 } = req.body;
+  const { moduleId, quantity: rawQuantity = 1 } = req.body;
   if (!moduleId) return res.status(400).json({ error: 'moduleId wajib diisi' });
+
+  // Unvalidated, a negative quantity reached the conflict clause and
+  // *decremented* an existing line.
+  const quantity = Number(rawQuantity);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: 'Jumlah tidak valid' });
+  }
 
   try {
     const mod = await db.query.modules.findFirst({
@@ -209,8 +216,13 @@ async function updateItem(req, res) {
   const { itemId } = req.params;
   const { quantity } = req.body;
 
+  // An omitted quantity used to slip past both guards below (undefined is
+  // neither < 0 nor === 0) and be written to the column verbatim.
+  if (quantity === undefined || quantity === null || !Number.isInteger(Number(quantity))) {
+    return res.status(400).json({ error: 'Jumlah tidak valid' });
+  }
   if (quantity < 0) return res.status(400).json({ error: 'Jumlah tidak valid' });
-  if (quantity === 0) {
+  if (Number(quantity) === 0) {
     return removeItem(req, res);
   }
 

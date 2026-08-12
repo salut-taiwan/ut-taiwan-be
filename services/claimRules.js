@@ -38,7 +38,9 @@ async function checkSalutSem1Eligibility(userId, productId) {
        AND p.status      IN ('paid', 'refunded')
      LIMIT 1
   `);
-  if (claimed.rows && claimed.rows.length > 0) {
+  // postgres.js returns a Result that extends Array — there is no `.rows`.
+  // Reading one made this guard dead code, so the claim could be spent twice.
+  if (claimed.length > 0) {
     return { ok: false, status: 409, error: 'Almet gratis sudah pernah diklaim' };
   }
 

@@ -331,7 +331,9 @@ async function rejectSalutApplication(req, res) {
 
     res.json(data);
     emitUserStatusUpdate(userId, { is_salut: false, is_salut_active: false, salut_status: 'rejected' });
-    emailService.sendSalutRejected({ email: data.email, name: data.name, reason }).catch((err) => console.error('[email] send failed:', err.message));
+    // The trimmed reason, matching what was stored — the applicant should read
+    // exactly what the admin record says.
+    emailService.sendSalutRejected({ email: data.email, name: data.name, reason: reason.trim() }).catch((err) => console.error('[email] send failed:', err.message));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

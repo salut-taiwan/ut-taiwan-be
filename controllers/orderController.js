@@ -119,6 +119,15 @@ async function checkout(req, res) {
   const uniqueCode = Math.floor(Math.random() * 500) + 100;
   const orderNumber = generateOrderNumber();
 
+  // Validated before the gateway is called: a bad code used to be rejected only
+  // after a payment had already been charged for.
+  const extras = Array.isArray(customItems) ? customItems : [];
+  for (const ci of extras) {
+    if (!ci.moduleCode || typeof ci.moduleCode !== 'string' || !ci.moduleCode.trim()) {
+      return res.status(400).json({ error: 'Kode modul wajib diisi untuk setiap item tambahan' });
+    }
+  }
+
   // Call gateway
   let gatewayResult;
   try {
@@ -142,13 +151,6 @@ async function checkout(req, res) {
   }
 
   const orderItemsPayload = buildOrderItemsPayload(cartItems);
-
-  const extras = Array.isArray(customItems) ? customItems : [];
-  for (const ci of extras) {
-    if (!ci.moduleCode || typeof ci.moduleCode !== 'string' || !ci.moduleCode.trim()) {
-      return res.status(400).json({ error: 'Kode modul wajib diisi untuk setiap item tambahan' });
-    }
-  }
   const allOrderItems = [...orderItemsPayload, ...buildCustomOrderItems(extras)];
 
   // RPC stays on Supabase client (atomic transaction with multiple table writes)

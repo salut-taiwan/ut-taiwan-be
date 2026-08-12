@@ -4,6 +4,7 @@ const { orders, payments, users } = require('../db/schema');
 const { eq, and, desc } = require('drizzle-orm');
 const orderEmailService = require('../services/orderEmailService');
 const { presentPayment } = require('../presenters/paymentPresenter');
+const { extFromMime } = require('../utils/validateUpload');
 
 
 async function confirmPayment(req, res) {
@@ -58,8 +59,8 @@ async function uploadProof(req, res) {
 
     if (!order) return res.status(404).json({ error: 'Pesanan tidak ditemukan atau belum dalam status menunggu pembayaran' });
 
-    const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase();
-    const filePath = `proofs/${orderId}/${Date.now()}.${ext}`;
+    // Derived from the verified MIME type, never from the client's filename.
+    const filePath = `proofs/${orderId}/${Date.now()}.${extFromMime(req.file.mimetype)}`;
 
     const { error: upErr } = await supabaseAdmin.storage
       .from('payment-docs')
@@ -82,8 +83,15 @@ async function uploadInvoice(req, res) {
   if (!req.file) return res.status(400).json({ error: 'File wajib dilampirkan' });
 
   try {
-    const ext = (req.file.originalname.split('.').pop() || 'pdf').toLowerCase();
-    const filePath = `invoices/${orderId}/${Date.now()}.${ext}`;
+    // The order has to exist: without this, an invoice could be filed against
+    // any id at all and the caller would still be told it worked.
+    const order = await db.query.orders.findFirst({
+      columns: { id: true },
+      where: eq(orders.id, orderId),
+    });
+    if (!order) return res.status(404).json({ error: 'Pesanan tidak ditemukan' });
+
+    const filePath = `invoices/${orderId}/${Date.now()}.${extFromMime(req.file.mimetype)}`;
 
     const { error: upErr } = await supabaseAdmin.storage
       .from('payment-docs')
