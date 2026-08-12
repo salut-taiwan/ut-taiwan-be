@@ -22,4 +22,11 @@ Thumbs.db
 .vscode/
 
 # Scraper debug artifacts and output snapshots
-/scraper/output/
+/scraper/output
+
+# Local acceptance-suite env (copy from .env.e2e.example).
+# The example holds the Supabase CLI's fixed local demo keys, which are
+# public by design and work only against a stack on this machine.
+.env.e2e
+!.env.e2e.example
+

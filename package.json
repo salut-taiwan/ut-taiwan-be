@@ -13,7 +13,12 @@
     "test:system:up": "docker compose -f test/system/docker-compose.yml up -d --wait",
     "test:system:down": "docker compose -f test/system/docker-compose.yml down -v",
     "test:all": "npm test && npm run test:system",
-    "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-coverage-exclude='test/**' --test-coverage-exclude='scripts/**' --test-coverage-exclude='scraper/tboScraper.js' --test-coverage-exclude='scraper/tokopediaScraper.js' --test-coverage-exclude='scraper/runTokopedia.js' --test-coverage-exclude='scraper/index.js' --test-coverage-exclude='db/schema.js' --test-coverage-exclude='drizzle/**' --test-coverage-exclude='migrations/**' 'test/{config,controllers,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'"
+    "test:coverage": "node --test --experimental-test-coverage --test-reporter=spec --test-coverage-exclude='test/**' --test-coverage-exclude='scripts/**' --test-coverage-exclude='scraper/tboScraper.js' --test-coverage-exclude='scraper/tokopediaScraper.js' --test-coverage-exclude='scraper/runTokopedia.js' --test-coverage-exclude='scraper/index.js' --test-coverage-exclude='db/schema.js' --test-coverage-exclude='drizzle/**' --test-coverage-exclude='migrations/**' 'test/{config,controllers,format,presenters,routes,services,middleware,scraper,utils}/**/*.test.js'",
+    "e2e:up": "supabase start && npm run e2e:schema && npm run e2e:seed",
+    "e2e:schema": "node scripts/apply-e2e-schema.js",
+    "e2e:seed": "node -r dotenv/config scripts/seed-e2e.js dotenv_config_path=.env.e2e",
+    "e2e:serve": "node -r dotenv/config bin/www dotenv_config_path=.env.e2e",
+    "e2e:down": "supabase stop"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
