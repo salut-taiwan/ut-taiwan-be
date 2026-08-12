@@ -256,3 +256,109 @@ describe('SKS payment admin endpoints', () => {
     assert.equal(res.status, 409);
   });
 });
+
+describe('uploading the two files a SKS payment needs', () => {
+  // A student uploads their UT payment slip and their bank transfer proof.
+  // Both go to a private bucket under their own user id, which is what keeps
+  // one student's slip out of another's reach.
+  const PDF = Buffer.from('%PDF-1.4 slip');
+
+  const send = (path, { name = 'slip.pdf', type = 'application/pdf', body = PDF } = {}) =>
+    authed('post', path).attach('file', body, { filename: name, contentType: type });
+
+  const uploads = [
+    ['the UT slip', '/api/sks-payment/upload-slip', 'slip'],
+    ['the transfer proof', '/api/sks-payment/upload-proof', 'proof'],
+  ];
+
+  for (const [label, path, kind] of uploads) {
+    test(`${label} is stored under the student's own folder`, async () => {
+      const h = setup({ storage: { upload: async () => ({ data: { path: 'p' }, error: null }) } });
+
+      const res = await send(path);
+
+      assert.equal(res.status, 200);
+      const up = h.calls.storage.find(c => c.op === 'upload');
+      assert.ok(up.path.startsWith(`${h.user.id}/`), `stored at ${up.path}`);
+      assert.match(up.path, new RegExp(`/${kind}_`));
+      assert.equal(res.body.url, up.path);
+    });
+
+    test(`${label} keeps its extension, so the file opens later`, async () => {
+      const h = setup({ storage: { upload: async () => ({ data: { path: 'p' }, error: null }) } });
+
+      await send(path);
+
+      assert.match(h.calls.storage.find(c => c.op === 'upload').path, /\.pdf$/);
+    });
+
+    test(`${label} refuses to overwrite an existing object`, async () => {
+      // Two uploads in the same millisecond must not let one student's file
+      // replace another's.
+      const h = setup({ storage: { upload: async () => ({ data: { path: 'p' }, error: null }) } });
+
+      await send(path);
+
+      assert.equal(h.calls.storage.find(c => c.op === 'upload').options.upsert, false);
+    });
+
+    test(`${label} with no file attached is a 400`, async () => {
+      setup();
+
+      const res = await authed('post', path);
+
+      assert.equal(res.status, 400);
+    });
+
+    test(`${label} rejects a file type that is not a slip`, async () => {
+      setup();
+
+      const res = await send(path, { name: 'virus.exe', type: 'application/x-msdownload' });
+
+      assert.equal(res.status, 400);
+    });
+
+    test(`${label} reports a storage failure instead of returning a dead path`, async () => {
+      setup({
+        storage: { upload: async () => ({ data: null, error: { message: 'bucket full' } }) },
+      });
+
+      const res = await send(path);
+
+      assert.equal(res.status, 500);
+      assert.match(res.body.error, /Gagal mengunggah/);
+    });
+
+    test(`${label} requires signing in`, async () => {
+      harness = stubBackend({ user: null, select: selectChain([]) });
+
+      const res = await request(app)
+        .post(path)
+        .set('X-Forwarded-For', freshIp())
+        .attach('file', PDF, { filename: 'slip.pdf', contentType: 'application/pdf' });
+
+      assert.equal(res.status, 401);
+    });
+  }
+
+  test('an image slip is accepted too, since most students photograph theirs', async () => {
+    const h = setup({ storage: { upload: async () => ({ data: { path: 'p' }, error: null }) } });
+
+    const res = await send('/api/sks-payment/upload-slip', {
+      name: 'slip.jpg', type: 'image/jpeg', body: Buffer.from('\xff\xd8\xff jpeg'),
+    });
+
+    assert.equal(res.status, 200);
+    assert.match(h.calls.storage.find(c => c.op === 'upload').path, /\.jpg$/);
+  });
+
+  test('the two uploads never collide, even back to back', async () => {
+    const h = setup({ storage: { upload: async () => ({ data: { path: 'p' }, error: null }) } });
+
+    await send('/api/sks-payment/upload-slip');
+    await send('/api/sks-payment/upload-proof');
+
+    const paths = h.calls.storage.filter(c => c.op === 'upload').map(c => c.path);
+    assert.equal(new Set(paths).size, 2);
+  });
+});

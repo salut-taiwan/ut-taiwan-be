@@ -314,3 +314,89 @@ describe('PATCH /api/users/admin/:userId/salut/reject', () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe('filtering the student list', () => {
+  // These build drizzle predicates. Against a stubbed database the rows come
+  // back the same whichever filter is applied, so what this pins is that every
+  // predicate *builds* — a mistyped column throws here rather than 500ing an
+  // admin mid-search. Which students each filter actually selects is the
+  // system tier's job, against real SQL.
+  const list = (qs) => authed('get', `/api/users/admin/all${qs}`);
+
+  const FILTERS = [
+    ['by name or email', '?search=budi'],
+    ['by SALUT membership', '?salut=true'],
+    ['by non-membership', '?salut=false'],
+    ['by application status', '?salut_status=pending'],
+    ['by verified', '?is_verified=true'],
+    ['by unverified', '?is_verified=false'],
+    ['by programme', '?program_id=44444444-4444-4444-4444-444444444444'],
+    ['by semester', '?semester=3'],
+    ['by several at once', '?search=budi&salut=true&is_verified=true&semester=1'],
+  ];
+
+  for (const [label, qs] of FILTERS) {
+    test(`filtering ${label} builds a valid query`, async () => {
+      setup({ rows: [], count: [{ count: 0 }] });
+
+      const res = await list(qs);
+
+      assert.equal(res.status, 200, `${qs} -> ${JSON.stringify(res.body)}`);
+    });
+  }
+
+  test('a made-up application status is ignored rather than erroring', async () => {
+    // An unknown status must not become part of the predicate; the allow-list
+    // is what stops a typo turning into an empty list an admin cannot explain.
+    setup({ rows: [], count: [{ count: 0 }] });
+
+    const res = await list('?salut_status=bukan-status');
+
+    assert.equal(res.status, 200);
+  });
+
+  test('an out-of-range semester is ignored', async () => {
+    setup({ rows: [], count: [{ count: 0 }] });
+
+    const res = await list('?semester=99');
+
+    assert.equal(res.status, 200);
+  });
+
+  test('a non-numeric semester is ignored', async () => {
+    setup({ rows: [], count: [{ count: 0 }] });
+
+    const res = await list('?semester=satu');
+
+    assert.equal(res.status, 200);
+  });
+
+  test('a search full of LIKE wildcards is escaped, not run as a pattern', async () => {
+    // Searching for "100%" must not match every student.
+    setup({ rows: [], count: [{ count: 0 }] });
+
+    const res = await list('?search=100%25_x');
+
+    assert.equal(res.status, 200);
+  });
+
+  test('a whitespace-only search is treated as no search', async () => {
+    setup({ rows: [], count: [{ count: 0 }] });
+
+    const res = await list('?search=%20%20');
+
+    assert.equal(res.status, 200);
+  });
+
+  test('a database failure is reported rather than shown as no students', async () => {
+    harness = stubBackend({
+      user: adminUser(),
+      query: { users: { findMany: async () => [] } },
+      select: () => { throw new Error('connection terminated'); },
+    });
+
+    const res = await list('?search=budi');
+
+    assert.equal(res.status, 500);
+  });
+});
