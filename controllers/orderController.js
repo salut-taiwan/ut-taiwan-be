@@ -568,7 +568,7 @@ async function updateRequestItemStatus(req, res) {
           orderNumber: orderRow.order_number,
           approved: allReqItems.filter(i => i.request_status === 'approved').map(i => i.module_name),
           rejected: allReqItems.filter(i => i.request_status === 'rejected').map(i => i.module_name),
-        });
+        }).catch((err) => console.error('[email] send failed:', err.message));
       } catch (_) { /* noop */ }
     })();
   } catch (err) {

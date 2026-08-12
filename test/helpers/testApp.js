@@ -114,17 +114,25 @@ const ORDER_EMAIL_METHODS = ['fetchOrderEmailPayload', 'sendStatusEmail'];
 function makeEmailRecorder() {
   const sent = [];
   const waiters = new Map();
+  const failing = new Set();
 
   function record(name, args) {
     const entry = { name, args, payload: args[0] };
     sent.push(entry);
     const waiter = waiters.get(name);
     if (waiter) { waiters.delete(name); waiter.resolve(entry.payload); }
+    if (failing.delete(name)) return Promise.reject(new Error(`${name} failed: Resend is down`));
     return Promise.resolve({ ok: true });
   }
 
   return {
     sent,
+    /**
+     * Make the next `name` send reject. Sends are fire-and-forget after
+     * res.json(), so this is how a test proves a mail outage cannot turn a
+     * successful action into a failed request or an unhandled rejection.
+     */
+    failNext: (name) => failing.add(name),
     /** Payloads sent through `name`, in order. */
     of: (name) => sent.filter(e => e.name === name).map(e => e.payload),
     /** Resolves with the payload when `name` is sent; rejects if it never is. */

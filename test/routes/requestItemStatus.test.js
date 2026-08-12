@@ -174,3 +174,108 @@ describe('POST /api/orders/admin/:orderId/confirm-karunika', () => {
     assert.equal(res.body.status, 'awaiting_payment');
   });
 });
+
+describe('telling the student once every requested item is settled', () => {
+  // Students request modules that have no price yet. Emailing on each decision
+  // would mean four emails for a four-item request, so the summary is sent
+  // only when the last pending one is settled.
+  const { selectQueue, freshIp } = require('../helpers/testApp');
+
+  function resolveSetup({ remaining = 0, items, order = { order_number: 'UT-2026-0001', user_id: 'u-1' }, user = { email: 'andi@example.com', name: 'Andi' } } = {}) {
+    const requested = items ?? [
+      { module_name: 'Bahasa Inggris', request_status: 'approved' },
+      { module_name: 'Statistika', request_status: 'rejected' },
+    ];
+    harness = stubBackend({
+      user: ADMIN,
+      query: {
+        order_items: { findFirst: async () => ({ id: ITEM_ID, quantity: 1, unit_price: 0, is_request: true }) },
+        orders: { findFirst: async () => order },
+        users: { findFirst: async () => user },
+      },
+      update: updateChain([{ id: ITEM_ID, subtotal: 50000 }]),
+      // The recalculation runs through db.execute, so the only two selects are
+      // the still-pending count and then the settled items.
+      select: selectQueue([
+        [{ remaining, pending: 0 }],
+        requested,
+      ]),
+    });
+    return harness;
+  }
+
+  const settle = () =>
+    request(app)
+      .patch(`/api/orders/admin/${ORDER_ID}/items/${ITEM_ID}/request-status`)
+      .set('X-Forwarded-For', freshIp())
+      .set('Authorization', 'Bearer test-token')
+      .send({ status: 'approved', unit_price: 50000 });
+
+  test('the summary lists what was approved and what was turned down', async () => {
+    const h = resolveSetup();
+
+    await settle();
+
+    const payload = await h.email.next('sendRequestItemsResolved');
+    assert.equal(payload.email, 'andi@example.com');
+    assert.equal(payload.orderNumber, 'UT-2026-0001');
+    assert.deepEqual(payload.approved, ['Bahasa Inggris']);
+    assert.deepEqual(payload.rejected, ['Statistika']);
+  });
+
+  test('nothing is sent while other items are still waiting on an admin', async () => {
+    const h = resolveSetup({ remaining: 2 });
+
+    await settle();
+
+    await assert.rejects(
+      h.email.next('sendRequestItemsResolved'),
+      'the student must not be emailed until the last item is settled',
+    );
+  });
+
+  test('an order that vanished mid-decision sends nothing rather than throwing', async () => {
+    const h = resolveSetup({ order: null });
+
+    const res = await settle();
+
+    assert.equal(res.status, 200, 'the admin still gets their answer');
+    await assert.rejects(h.email.next('sendRequestItemsResolved'));
+  });
+
+  test('a missing user record sends nothing rather than emailing undefined', async () => {
+    const h = resolveSetup({ user: null });
+
+    const res = await settle();
+
+    assert.equal(res.status, 200);
+    await assert.rejects(h.email.next('sendRequestItemsResolved'));
+  });
+
+  test('an all-approved request reports nothing as rejected', async () => {
+    const h = resolveSetup({
+      items: [
+        { module_name: 'Bahasa Inggris', request_status: 'approved' },
+        { module_name: 'Statistika', request_status: 'approved' },
+      ],
+    });
+
+    await settle();
+
+    const payload = await h.email.next('sendRequestItemsResolved');
+    assert.deepEqual(payload.approved, ['Bahasa Inggris', 'Statistika']);
+    assert.deepEqual(payload.rejected, []);
+  });
+
+  test('the email is fire-and-forget — a mail failure never fails the admin action', async () => {
+    const h = resolveSetup();
+    h.email.failNext('sendRequestItemsResolved');
+
+    const res = await settle();
+
+    assert.equal(res.status, 200);
+    // And the rejection was handled: the cross-cutting suite fails the run on
+    // any unhandled one, so reaching here with the mail rejected is the proof.
+    await h.email.next('sendRequestItemsResolved');
+  });
+});
