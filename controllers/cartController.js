@@ -5,6 +5,7 @@ const { eq, and, sql } = require('drizzle-orm');
 const { presentCart } = require('../presenters/cartPresenter');
 const { isSalutActive } = require('../config/constants');
 const { checkSalutSem1Eligibility, cartContainsProduct } = require('../services/claimRules');
+const { deriveModuleCartEntry } = require('../services/cartPricing');
 
 async function getUserSalutActive(userId) {
   const u = await db.query.users.findFirst({
@@ -120,8 +121,7 @@ async function addItem(req, res) {
 
     if (!mod || mod.deleted_at) return res.status(404).json({ error: 'Modul tidak ditemukan' });
 
-    const priceSnapshot = mod.price_student ?? 0;
-    const isRequest = !mod.is_available || !mod.price_student;
+    const { priceSnapshot, isRequest } = deriveModuleCartEntry(mod);
 
     const cart = await getOrCreateCart(req.user.id);
 
@@ -173,13 +173,16 @@ async function addPackage(req, res) {
     const cart = await getOrCreateCart(req.user.id);
     const items = (pkg.package_modules || [])
       .filter(pm => pm.modules)
-      .map(pm => ({
-        cart_id: cart.id,
-        module_id: pm.modules.id,
-        quantity: 1,
-        price_snapshot: pm.modules.price_student ?? 0,
-        is_request: !pm.modules.is_available || !pm.modules.price_student,
-      }));
+      .map(pm => {
+        const { priceSnapshot, isRequest } = deriveModuleCartEntry(pm.modules);
+        return {
+          cart_id: cart.id,
+          module_id: pm.modules.id,
+          quantity: 1,
+          price_snapshot: priceSnapshot,
+          is_request: isRequest,
+        };
+      });
 
     if (items.length === 0) {
       return res.status(400).json({ error: 'Tidak ada modul dalam paket ini' });

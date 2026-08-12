@@ -12,7 +12,7 @@ async function fetchOrderEmailPayload(orderId) {
     columns: { order_number: true, total_amount: true, user_id: true },
     where: eq(orders.id, orderId),
     with: {
-      order_items: { columns: { module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true } },
+      order_items: { columns: { module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true, is_request: true, request_status: true } },
     },
   });
 

@@ -224,7 +224,7 @@ describe('presentOrderDetail — per-item displays', () => {
     assert.equal(item.request_status_label, 'Ditolak');
   });
 
-  test('pending_request item: price_visible=false, request_status_label set', () => {
+  test('pending_request item awaiting a price: price hidden so 0 never reads as "Gratis"', () => {
     const out = presentOrderDetail(baseOrder({
       order_items: [{
         ...baseOrder().order_items[0],
@@ -234,6 +234,30 @@ describe('presentOrderDetail — per-item displays', () => {
     }));
     const item = out.order_items[0];
     assert.ok(item.request_status_label);
+    assert.equal(item.price_visible, false);
+  });
+
+  test('pending_request item that already has a price keeps it visible', () => {
+    const out = presentOrderDetail(baseOrder({
+      order_items: [{
+        ...baseOrder().order_items[0],
+        is_request: true, request_status: 'pending', display_status: 'pending_request',
+      }],
+    }));
+    assert.equal(out.order_items[0].price_visible, true);
+  });
+
+  test('free non-request item (SALUT almet) shows "Gratis"', () => {
+    const out = presentOrderDetail(baseOrder({
+      order_items: [{
+        id: 'i-2', module_code: null, module_name: 'Jas Almamater SALUT', sku_id: 'sku-1',
+        quantity: 1, unit_price: 0, subtotal: 0,
+        is_request: false, request_status: null, display_status: 'normal',
+      }],
+    }));
+    const item = out.order_items[0];
+    assert.equal(item.price_visible, true);
+    assert.equal(item.subtotal_display, 'Gratis');
   });
 
   test('zero_price item: price_visible=false', () => {
@@ -245,6 +269,43 @@ describe('presentOrderDetail — per-item displays', () => {
       }],
     }));
     assert.equal(out.order_items[0].price_visible, false);
+  });
+});
+
+describe('item_type and order_kind', () => {
+  const moduleItem = { id: 'i-1', module_code: 'MKDU4109', module_name: 'Bahasa Inggris', quantity: 1, unit_price: 50000, subtotal: 50000, is_request: false, request_status: null };
+  const merchItem  = { id: 'i-2', module_code: null, module_name: 'Jas Almamater', sku_id: 'sku-1', variant_label: 'L', quantity: 1, unit_price: 350000, subtotal: 350000, is_request: false, request_status: null };
+
+  test('sku_id marks an item as merch, its absence as a module', () => {
+    const out = presentAdminOrder(baseOrder({ order_items: [moduleItem, merchItem] }));
+    assert.equal(out.order_items[0].item_type, 'module');
+    assert.equal(out.order_items[1].item_type, 'merch');
+  });
+
+  test('order_kind reflects what the order holds', () => {
+    assert.equal(presentAdminOrder(baseOrder({ order_items: [moduleItem] })).order_kind, 'module');
+    assert.equal(presentAdminOrder(baseOrder({ order_items: [merchItem] })).order_kind, 'merch');
+    assert.equal(presentAdminOrder(baseOrder({ order_items: [moduleItem, merchItem] })).order_kind, 'mixed');
+  });
+
+  test('a custom request item (code, no sku) counts as a module', () => {
+    const custom = { id: 'i-3', module_code: 'ABC123', module_name: 'ABC123', quantity: 1, unit_price: 0, subtotal: 0, is_request: true, request_status: 'pending' };
+    const out = presentAdminOrder(baseOrder({ order_items: [custom] }));
+    assert.equal(out.order_items[0].item_type, 'module');
+    assert.equal(out.order_kind, 'module');
+  });
+});
+
+describe('order-level subtotal formatting', () => {
+  test('subtotal 0 renders as an amount, never "Gratis"', () => {
+    const out = presentOrderDetail(baseOrder({ subtotal: 0 }));
+    assert.equal(out.subtotal_display, `Rp${NBSP}0`);
+    assert.equal(out.total_breakdown.subtotal_display, `Rp${NBSP}0`);
+  });
+
+  test('admin and detail views agree on the subtotal string', () => {
+    const order = baseOrder({ subtotal: 0 });
+    assert.equal(presentAdminOrder(order).subtotal_display, presentOrderDetail(order).subtotal_display);
   });
 });
 

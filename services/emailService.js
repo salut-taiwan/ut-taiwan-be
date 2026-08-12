@@ -22,9 +22,12 @@ function emailDate(iso) {
 function itemRows(items = []) {
   return items.map(i => {
     const label = i.module_code ? `${i.module_code} ${i.module_name}` : i.module_name;
+    // An unresolved request has no price yet — "Gratis" would promise the item is free.
+    const awaitingPrice = i.is_request && i.request_status !== 'approved' && !Number(i.subtotal);
+    const amount = awaitingPrice ? 'Harga menyusul' : formatPriceOrFree(i.subtotal);
     return `<tr>
       <td style="padding:6px 0;color:#374151;font-size:13px;">${label}</td>
-      <td style="padding:6px 0;text-align:right;color:#374151;font-size:13px;">${formatPriceOrFree(i.subtotal)}</td>
+      <td style="padding:6px 0;text-align:right;color:#374151;font-size:13px;">${amount}</td>
     </tr>`;
   }).join('');
 }

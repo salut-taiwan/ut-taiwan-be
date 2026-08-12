@@ -13,6 +13,7 @@ const {
 } = require('../presenters/orderPresenter');
 const { composeShippingAddressLine } = require('../format');
 const { checkSalutSem1Eligibility } = require('../services/claimRules');
+const { buildOrderItemsPayload, buildCustomOrderItems } = require('../services/orderItemsPayload');
 
 function generateOrderNumber() {
   const now = new Date();
@@ -140,30 +141,7 @@ async function checkout(req, res) {
     };
   }
 
-  const orderItemsPayload = cartItems.map(i => {
-    if (i.modules) {
-      return {
-        module_id: i.modules.id,
-        module_code: i.modules.tbo_code,
-        module_name: i.modules.name,
-        quantity: i.quantity,
-        unit_price: i.price_snapshot,
-        subtotal: Number(i.price_snapshot) * i.quantity,
-        is_request: i.is_request,
-      };
-    }
-    return {
-      module_id: null,
-      module_code: null,
-      module_name: i.product_name_snapshot,
-      quantity: i.quantity,
-      unit_price: i.price_snapshot,
-      subtotal: Number(i.price_snapshot) * i.quantity,
-      is_request: true,
-      sku_id: i.sku_id,
-      variant_label: i.variant_label,
-    };
-  });
+  const orderItemsPayload = buildOrderItemsPayload(cartItems);
 
   const extras = Array.isArray(customItems) ? customItems : [];
   for (const ci of extras) {
@@ -171,16 +149,7 @@ async function checkout(req, res) {
       return res.status(400).json({ error: 'Kode modul wajib diisi untuk setiap item tambahan' });
     }
   }
-  const customOrderItems = extras.map(ci => ({
-    module_id: null,
-    module_code: ci.moduleCode.trim().slice(0, 30),
-    module_name: ci.moduleName?.trim() || ci.moduleCode.trim().slice(0, 30),
-    quantity: Math.max(1, parseInt(ci.quantity) || 1),
-    unit_price: 0,
-    subtotal: 0,
-    is_request: true,
-  }));
-  const allOrderItems = [...orderItemsPayload, ...customOrderItems];
+  const allOrderItems = [...orderItemsPayload, ...buildCustomOrderItems(extras)];
 
   // RPC stays on Supabase client (atomic transaction with multiple table writes)
   const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('checkout_order', {
@@ -302,19 +271,26 @@ async function cancelOrder(req, res) {
     .catch((err) => console.error('[email] send failed:', err.message));
 }
 
+// Shape shared by the admin list and the single-order refresh returned after a
+// request item is resolved — they must match, or the refreshed row would come
+// back missing fields the table renders.
+const ADMIN_ORDER_SHAPE = {
+  columns: {
+    id: true, order_number: true, status: true, subtotal: true,
+    shipping_cost: true, box_fee: true, admin_fee: true, is_salut_order: true,
+    total_amount: true, created_at: true, shipping_name: true, shipping_phone: true,
+  },
+  with: {
+    payments: { columns: { status: true, amount: true, proof_path: true, invoice_path: true, proof_uploaded_at: true } },
+    order_items: { columns: { id: true, module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true, is_request: true, request_status: true, sku_id: true, variant_label: true } },
+  },
+};
+
 async function listAllOrders(req, res) {
   try {
     const data = await db.query.orders.findMany({
-      columns: {
-        id: true, order_number: true, status: true, subtotal: true,
-        shipping_cost: true, box_fee: true, admin_fee: true, is_salut_order: true,
-        total_amount: true, created_at: true, shipping_name: true, shipping_phone: true,
-      },
+      ...ADMIN_ORDER_SHAPE,
       orderBy: desc(orders.created_at),
-      with: {
-        payments: { columns: { status: true, amount: true, proof_path: true, invoice_path: true, proof_uploaded_at: true } },
-        order_items: { columns: { id: true, module_code: true, module_name: true, quantity: true, unit_price: true, subtotal: true, is_request: true, request_status: true } },
-      },
     });
     res.json(data.map(presentAdminOrder));
   } catch (err) {
@@ -533,7 +509,19 @@ async function updateRequestItemStatus(req, res) {
       `);
     }
 
-    res.json({ message: 'Status permintaan berhasil diperbarui', status });
+    // Return the whole order: approving an item rewrites the order subtotal,
+    // total_amount and the pending payment amount, so an admin UI that patched
+    // only the item row would show a total contradicting the items beneath it.
+    const refreshed = await db.query.orders.findFirst({
+      ...ADMIN_ORDER_SHAPE,
+      where: eq(orders.id, orderId),
+    });
+
+    res.json({
+      message: 'Status permintaan berhasil diperbarui',
+      status,
+      order: refreshed ? presentAdminOrder(refreshed) : null,
+    });
 
     // Send resolution email if no pending requests remain
     (async () => {

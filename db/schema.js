@@ -7,6 +7,12 @@ const { relations } = require('drizzle-orm');
 // shorthand for timestamptz
 const tsz = (name) => timestamp(name, { withTimezone: true });
 
+// shorthand for money columns. mode: 'number' matters — without it drizzle returns
+// numeric as a string ("0.00"), which silently breaks every `=== 0` / truthiness
+// check downstream. Raw db.execute() reads bypass this mapping.
+const money = (name, precision = 12, scale = 2) =>
+  numeric(name, { precision, scale, mode: 'number' });
+
 // ─── Reference / Catalog ────────────────────────────────────────────────────
 
 const faculties = pgTable('faculties', {
@@ -51,8 +57,8 @@ const modules = pgTable('modules', {
   author:          text('author'),
   publisher:       text('publisher').default('Universitas Terbuka'),
   cover_image_url: text('cover_image_url'),
-  price_student:   numeric('price_student', { precision: 12, scale: 2 }),
-  price_general:   numeric('price_general', { precision: 12, scale: 2 }),
+  price_student:   money('price_student'),
+  price_general:   money('price_general'),
   weight_grams:    integer('weight_grams'),
   is_available:    boolean('is_available').default(true),
   tbo_url:         text('tbo_url'),
@@ -153,8 +159,9 @@ const users = pgTable('users', {
   salut_payment_proof_url:   text('salut_payment_proof_url'),
   salut_rejection_reason:    text('salut_rejection_reason'),
   salut_approved_at:         tsz('salut_approved_at'),
-  salut_applied_fee_amount:  numeric('salut_applied_fee_amount', { precision: 12, scale: 2 }),
+  salut_applied_fee_amount:  money('salut_applied_fee_amount'),
   salut_applied_semester:    integer('salut_applied_semester'),
+  salut_wa_number:           text('salut_wa_number'),                          // migration 029
   created_at: tsz('created_at').defaultNow(),
   updated_at: tsz('updated_at').defaultNow(),
 });
@@ -174,7 +181,7 @@ const cart_items = pgTable('cart_items', {
   module_id:            uuid('module_id').references(() => modules.id, { onDelete: 'cascade' }),
   sku_id:               uuid('sku_id'),                                 // FK to product_skus (forward ref)
   quantity:             integer('quantity').notNull().default(1),
-  price_snapshot:       numeric('price_snapshot', { precision: 12, scale: 2 }).notNull(),
+  price_snapshot:       money('price_snapshot').notNull(),
   is_request:           boolean('is_request').notNull().default(false),
   variant_label:        text('variant_label'),
   product_name_snapshot: text('product_name_snapshot'),
@@ -191,7 +198,7 @@ const products = pgTable('products', {
   category:     varchar('category', { length: 50 }).notNull(),
   name:         text('name').notNull(),
   description:  text('description'),
-  base_price:   numeric('base_price', { precision: 12, scale: 2 }).notNull(),
+  base_price:   money('base_price').notNull(),
   weight_grams: integer('weight_grams').notNull().default(0),
   claim_rule:   varchar('claim_rule', { length: 50 }),
   created_at:   tsz('created_at').defaultNow(),
@@ -225,7 +232,7 @@ const product_skus = pgTable('product_skus', {
   id:               uuid('id').primaryKey().defaultRandom(),
   product_id:       uuid('product_id').references(() => products.id, { onDelete: 'cascade' }).notNull(),
   tokopedia_sku_id: varchar('tokopedia_sku_id', { length: 50 }),
-  price:            numeric('price', { precision: 12, scale: 2 }).notNull(),
+  price:            money('price').notNull(),
   option_names:     jsonb('option_names').notNull().default([]),
   created_at:       tsz('created_at').defaultNow(),
   updated_at:       tsz('updated_at').defaultNow(),
@@ -239,12 +246,12 @@ const orders = pgTable('orders', {
   user_id:          uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
   status:           varchar('status', { length: 30 }).default('pending'),
   // pending | awaiting_payment | paid | processing | shipped | delivered | cancelled
-  subtotal:         numeric('subtotal', { precision: 12, scale: 2 }).notNull(),
-  shipping_cost:    numeric('shipping_cost', { precision: 12, scale: 2 }).default('0'),
-  box_fee:          numeric('box_fee', { precision: 12, scale: 2 }).notNull().default('0'),
-  admin_fee:        numeric('admin_fee', { precision: 12, scale: 2 }).notNull().default('0'),
+  subtotal:         money('subtotal').notNull(),
+  shipping_cost:    money('shipping_cost').default(0),
+  box_fee:          money('box_fee').notNull().default(0),
+  admin_fee:        money('admin_fee').notNull().default(0),
   is_salut_order:   boolean('is_salut_order').notNull().default(false),
-  total_amount:     numeric('total_amount', { precision: 12, scale: 2 }).notNull(),
+  total_amount:     money('total_amount').notNull(),
   shipping_name:    text('shipping_name'),
   shipping_address: text('shipping_address'),
   shipping_city:    text('shipping_city'),
@@ -266,8 +273,8 @@ const order_items = pgTable('order_items', {
   module_code:    varchar('module_code', { length: 30 }),               // nullable for merch items
   module_name:    text('module_name').notNull(),
   quantity:       integer('quantity').notNull().default(1),
-  unit_price:     numeric('unit_price', { precision: 12, scale: 2 }).notNull(),
-  subtotal:       numeric('subtotal', { precision: 12, scale: 2 }).notNull(),
+  unit_price:     money('unit_price').notNull(),
+  subtotal:       money('subtotal').notNull(),
   is_request:     boolean('is_request').notNull().default(false),
   request_status: text('request_status'),                               // pending | approved | rejected | null
   variant_label:  text('variant_label'),
@@ -281,7 +288,7 @@ const payments = pgTable('payments', {
   gateway_billing_no: text('gateway_billing_no'),
   method:             varchar('method', { length: 30 }),
   bank:               varchar('bank', { length: 20 }),
-  amount:             numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  amount:             money('amount').notNull(),
   unique_code:        integer('unique_code').default(0),
   status:             varchar('status', { length: 20 }).default('pending'),
   // pending | paid | expired | failed | refunded
@@ -339,9 +346,9 @@ const sks_payments = pgTable('sks_payments', {
   nim:                varchar('nim', { length: 20 }).notNull(),
   name:               text('name').notNull(),
   semester_period:    text('semester_period').notNull(),
-  idr_amount:         numeric('idr_amount', { precision: 14, scale: 2 }).notNull(),
-  ntd_amount:         numeric('ntd_amount', { precision: 10, scale: 2 }).notNull(),
-  rate_idr_per_ntd:   numeric('rate_idr_per_ntd', { precision: 8, scale: 2 }).notNull(),
+  idr_amount:         money('idr_amount', 14, 2).notNull(),
+  ntd_amount:         money('ntd_amount', 10, 2).notNull(),
+  rate_idr_per_ntd:   money('rate_idr_per_ntd', 8, 2).notNull(),
   ut_slip_url:        text('ut_slip_url').notNull(),
   transfer_proof_url: text('transfer_proof_url').notNull(),
   status:             varchar('status', { length: 20 }).default('pending').notNull(),

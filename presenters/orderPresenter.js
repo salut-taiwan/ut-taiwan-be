@@ -48,16 +48,35 @@ function buildFeeLines({ shippingCost = 0, boxFee = 0, adminFee = 0, isSalutOrde
 
 // --- Per-element decorators ------------------------------------------------
 
+// Merchandise lines reuse the module_* columns (module_code stays NULL), so
+// sku_id is the only discriminator on an order item.
+function deriveItemType(item) {
+  return item.sku_id ? 'merch' : 'module';
+}
+
 function presentOrderItem(item) {
   const display = item.display_status;
-  const priceVisible = display !== 'rejected' && display !== 'zero_price';
+  // A request still waiting on an admin price has unit_price 0, which would
+  // otherwise render as "Gratis". A zero-price *non-request* item (the free
+  // SALUT almet) is genuinely free and keeps its price visible.
+  const awaitingPrice = display === 'pending_request' && Number(item.unit_price) === 0;
+  const priceVisible = display !== 'rejected' && display !== 'zero_price' && !awaitingPrice;
   return {
     ...item,
+    item_type: deriveItemType(item),
     unit_price_display: formatPriceOrFree(Number(item.unit_price)),
     subtotal_display: formatPriceOrFree(Number(item.subtotal)),
     request_status_label: getRequestStatusLabel(item.request_status),
     price_visible: priceVisible,
   };
+}
+
+// One checkout maps the whole cart into one order, so an order can hold both
+// kinds. 'mixed' orders surface under either filter in the admin table.
+function deriveOrderKind(items) {
+  const types = new Set((items || []).map(deriveItemType));
+  if (types.size > 1) return 'mixed';
+  return types.has('merch') ? 'merch' : 'module';
 }
 
 // --- Order presenters -------------------------------------------------------
@@ -84,7 +103,10 @@ function presentOrderCommon(order) {
     isSalutOrder: Boolean(order.is_salut_order),
   });
   return {
-    subtotal_display: formatPriceOrFree(Number(order.subtotal)),
+    // Order-level subtotal always renders as an amount: "Gratis" is a property of
+    // an individual free item, and reads as a bug on an order whose items are
+    // still awaiting prices.
+    subtotal_display: formatIDR(Number(order.subtotal)),
     shipping_cost_display: formatIDR(Number(order.shipping_cost ?? 0)),
     box_fee_display: formatIDR(Number(order.box_fee ?? 0)),
     admin_fee_display: formatIDR(Number(order.admin_fee ?? 0)),
@@ -165,6 +187,7 @@ function presentAdminOrder(row) {
     created_at_display: formatDate(row.created_at),
     subtotal_display: formatIDR(Number(row.subtotal)),
     total_amount_display: formatIDR(Number(row.total_amount)),
+    order_kind: deriveOrderKind(row.order_items),
     payments: (row.payments || []).map(presentPayment),
     order_items: (row.order_items || []).map(presentOrderItem),
   };
