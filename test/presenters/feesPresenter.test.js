@@ -44,6 +44,16 @@ describe('presentFees', () => {
     assert.equal(out.salutMembership.returning_display, 'NT$ 1,200');
   });
 
+  test('adds IDR equivalents — the amount actually transferred over QRIS', () => {
+    const out = presentFees(makeRawFees());
+    assert.equal(out.salutMembership.new_display_idr, `Rp${NBSP}952.000`);
+    assert.equal(out.salutMembership.returning_display_idr, `Rp${NBSP}672.000`);
+    assert.equal(
+      out.salutMembership.tier_combined_display_idr,
+      `Rp${NBSP}952.000 (semester 1) atau Rp${NBSP}672.000 (semester 2+)`
+    );
+  });
+
   test('adds tier labels', () => {
     const out = presentFees(makeRawFees());
     assert.equal(out.salutMembership.new_label, 'NT$ 1,700 (semester 1)');

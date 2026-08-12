@@ -19,9 +19,14 @@ function boundaryUTC(year, month, day) {
 }
 
 function getSalutMembershipFee(currentSemester) {
-  return currentSemester === 1
-    ? { amount: SALUT_MEMBERSHIP.PRICE_NEW, currency: SALUT_MEMBERSHIP.CURRENCY, tier: 'new' }
-    : { amount: SALUT_MEMBERSHIP.PRICE_RETURNING, currency: SALUT_MEMBERSHIP.CURRENCY, tier: 'returning' };
+  const isNew = currentSemester === 1;
+  const amount = isNew ? SALUT_MEMBERSHIP.PRICE_NEW : SALUT_MEMBERSHIP.PRICE_RETURNING;
+  return {
+    amount,
+    currency: SALUT_MEMBERSHIP.CURRENCY,
+    tier: isNew ? 'new' : 'returning',
+    amount_idr: amount * RATE_IDR_PER_NTD,
+  };
 }
 
 function allBoundariesAround(year) {
@@ -54,8 +59,12 @@ function isSalutActive(approvedAt, now = new Date()) {
   return new Date(approvedAt) >= mostRecentExpiryBefore(now);
 }
 
+// One published NTD→IDR rate for the whole site: SKS payment quotes, and the
+// SALUT membership fee, which is quoted in NTD but transferred in IDR via QRIS.
+const RATE_IDR_PER_NTD = 560;
+
 const SKS_PAYMENT = {
-  RATE_IDR_PER_NTD: 560,
+  RATE_IDR_PER_NTD,
 };
 
 const SKS_PAYMENT_BANK = {
@@ -109,5 +118,6 @@ module.exports = {
   isSalutActive,
   SKS_PAYMENT,
   SKS_PAYMENT_BANK,
+  RATE_IDR_PER_NTD,
   quoteNtdFromIdr,
 };

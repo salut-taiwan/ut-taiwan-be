@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatNTD, formatDate } = require('../format');
+const { formatNTD, formatIDR, formatDate } = require('../format');
 const { getSalutMembershipFee } = require('../config/constants');
 
 function feeAmountDisplay(value) {
@@ -18,6 +18,8 @@ function buildApplicableFee(currentSemester) {
   return {
     ...fee,
     amount_display: amountDisplay,
+    // What the student actually transfers over QRIS.
+    amount_idr_display: formatIDR(fee.amount_idr),
     tier_label: fee.tier === 'new'
       ? 'Mahasiswa baru (Semester 1)'
       : 'Mahasiswa lama (Semester 2+)',

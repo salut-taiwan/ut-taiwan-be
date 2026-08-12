@@ -10,6 +10,7 @@ const {
   isSalutActive,
 } = require('../config/constants');
 const { presentSalutStatus } = require('../presenters/salutPresenter');
+const { normalizeWaNumber } = require('../format');
 const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 
 const { validateUpload, extFromMime } = require('../utils/validateUpload');
@@ -42,9 +43,15 @@ async function uploadProof(req, res) {
 }
 
 async function applyForMembership(req, res) {
-  const { proofUrl, current_semester: bodySemester } = req.body;
+  const { proofUrl, current_semester: bodySemester, wa_number: bodyWaNumber } = req.body;
   if (!proofUrl || typeof proofUrl !== 'string' || !proofUrl.trim()) {
     return res.status(400).json({ error: 'URL bukti pembayaran wajib diisi' });
+  }
+
+  // Required: without it an approved member can't be added to the SALUT group.
+  const waNumber = normalizeWaNumber(bodyWaNumber);
+  if (!waNumber) {
+    return res.status(400).json({ error: 'Nomor WhatsApp aktif wajib diisi dengan benar' });
   }
 
   if (bodySemester !== undefined && bodySemester !== null) {
@@ -85,8 +92,11 @@ async function applyForMembership(req, res) {
         salut_payment_proof_url: proofUrl.trim(),
         salut_rejection_reason: null,
         current_semester: resolvedSemester,
-        salut_applied_fee_amount: String(fee.amount),
+        salut_applied_fee_amount: fee.amount,
         salut_applied_semester: resolvedSemester,
+        salut_wa_number: waNumber,
+        // The number they're reachable on today is the better profile phone too.
+        phone: waNumber,
       })
       .where(eq(users.id, req.user.id));
 

@@ -57,6 +57,8 @@ describe('presentSalutStatus — applicable_fee', () => {
     assert.equal(out.applicable_fee.currency, 'NTD');
     assert.equal(out.applicable_fee.tier, 'new');
     assert.equal(out.applicable_fee.amount_display, 'NT$ 1,700');
+    assert.equal(out.applicable_fee.amount_idr, 952000);
+    assert.equal(out.applicable_fee.amount_idr_display, `Rp 952.000`);
     assert.equal(out.applicable_fee.tier_label, 'Mahasiswa baru (Semester 1)');
   });
 
@@ -69,6 +71,8 @@ describe('presentSalutStatus — applicable_fee', () => {
     assert.equal(out.applicable_fee.amount, 1200);
     assert.equal(out.applicable_fee.tier, 'returning');
     assert.equal(out.applicable_fee.amount_display, 'NT$ 1,200');
+    assert.equal(out.applicable_fee.amount_idr, 672000);
+    assert.equal(out.applicable_fee.amount_idr_display, `Rp 672.000`);
     assert.equal(out.applicable_fee.tier_label, 'Mahasiswa lama (Semester 2+)');
   });
 

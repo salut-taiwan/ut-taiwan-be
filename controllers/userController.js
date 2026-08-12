@@ -5,7 +5,7 @@ const { eq, and, ne, or, ilike, inArray, asc, desc, sql } = require('drizzle-orm
 const emailService = require('../services/emailService');
 const { nextSalutExpiry } = require('../config/constants');
 const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
-const { formatDate, formatNTD } = require('../format');
+const { formatDate, formatNTD, normalizeWaNumber } = require('../format');
 
 const SORT_MAP = {
   name:             users.name,
@@ -218,9 +218,9 @@ async function listSalutApplications(req, res) {
 
     const data = await db.query.users.findMany({
       columns: {
-        id: true, email: true, name: true, nim: true, current_semester: true,
+        id: true, email: true, name: true, nim: true, current_semester: true, phone: true,
         salut_applied_at: true, salut_payment_proof_url: true,
-        salut_applied_fee_amount: true, salut_applied_semester: true,
+        salut_applied_fee_amount: true, salut_applied_semester: true, salut_wa_number: true,
       },
       where: and(...conditions),
       orderBy: asc(users.salut_applied_at),
@@ -229,6 +229,9 @@ async function listSalutApplications(req, res) {
 
     res.json(data.map((u) => ({
       ...u,
+      // Applications from before migration 029 have no snapshot — fall back to
+      // the profile number so the admin still has something to contact.
+      salut_wa_number: u.salut_wa_number || normalizeWaNumber(u.phone),
       salut_applied_at_display: formatDate(u.salut_applied_at),
       salut_applied_fee_amount_display: u.salut_applied_fee_amount != null
         ? formatNTD(Number(u.salut_applied_fee_amount))

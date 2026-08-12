@@ -6,4 +6,5 @@ module.exports = {
   ...require('./labels'),
   ...require('./storage'),
   ...require('./address'),
+  ...require('./phone'),
 };
