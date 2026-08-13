@@ -49,6 +49,29 @@ async function grantPostgrestRoles(sql) {
   console.log('  PostgREST roles granted');
 }
 
+/**
+ * Create the private storage buckets the app uploads to.
+ *
+ * Only `salut-proofs` is in a migration (018). `payment-docs` and
+ * `sks-payment-files` exist in the production project because somebody made
+ * them by hand in the dashboard — nothing in this repo records that, so a
+ * stack built purely from migrations has neither, and every proof or slip
+ * upload 500s.
+ *
+ * Creating them here keeps the acceptance suite honest. It does not fix the
+ * underlying gap: production's bucket setup is still undocumented.
+ */
+async function createStorageBuckets(sql) {
+  await sql.unsafe(`
+    INSERT INTO storage.buckets (id, name, public) VALUES
+      ('salut-proofs', 'salut-proofs', false),
+      ('payment-docs', 'payment-docs', false),
+      ('sks-payment-files', 'sks-payment-files', false)
+    ON CONFLICT (id) DO NOTHING;
+  `).simple();
+  console.log('  storage buckets present');
+}
+
 async function main() {
   assertNoDrift();
 
@@ -60,6 +83,7 @@ async function main() {
     const existing = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
     try {
       await grantPostgrestRoles(existing);
+      await createStorageBuckets(existing);
     } finally {
       await existing.end({ timeout: 5 });
     }
@@ -80,6 +104,7 @@ async function main() {
     }
     console.log('  schema applied to the local Supabase stack');
     await grantPostgrestRoles(sql);
+    await createStorageBuckets(sql);
   } finally {
     await sql.end({ timeout: 5 });
   }

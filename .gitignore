@@ -30,3 +30,4 @@ Thumbs.db
 .env.e2e
 !.env.e2e.example
 
+test-results/
