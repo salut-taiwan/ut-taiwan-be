@@ -22,6 +22,33 @@ if (!/(127\.0\.0\.1|localhost)/.test(url)) {
   process.exit(1);
 }
 
+/**
+ * Grant the PostgREST roles access to everything the manifest created.
+ *
+ * A real Supabase project does this for you: tables made through its own
+ * migration flow inherit grants for anon/authenticated/service_role, and RLS
+ * is what actually restricts them. This script runs raw SQL as `postgres`, so
+ * the tables it creates are owned by postgres with no grants at all — and the
+ * backend, which talks to PostgREST as service_role, gets
+ * "permission denied for table users" on every admin request.
+ *
+ * Idempotent, and run on every invocation rather than only on a fresh apply:
+ * a stack provisioned before this existed still needs them.
+ */
+async function grantPostgrestRoles(sql) {
+  await sql.unsafe(`
+    GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+    GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+    GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL ON TABLES TO anon, authenticated, service_role;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+  `).simple();
+  console.log('  PostgREST roles granted');
+}
+
 async function main() {
   assertNoDrift();
 
@@ -30,6 +57,12 @@ async function main() {
   // fresh stack anyway — use `supabase db reset` to start over.
   if (await isProvisioned(url)) {
     console.log('  schema already present — skipping (supabase db reset to rebuild)');
+    const existing = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+    try {
+      await grantPostgrestRoles(existing);
+    } finally {
+      await existing.end({ timeout: 5 });
+    }
     return;
   }
 
@@ -46,6 +79,7 @@ async function main() {
       }
     }
     console.log('  schema applied to the local Supabase stack');
+    await grantPostgrestRoles(sql);
   } finally {
     await sql.end({ timeout: 5 });
   }
