@@ -134,3 +134,37 @@ describe('migration integrity', { skip: skipReason() }, () => {
     assert.equal(row.rolbypassrls, true);
   });
 });
+
+describe('storage buckets', { skip: skipReason() }, () => {
+  let sql;
+  before(async () => { sql = await getDb(); });
+  after(async () => { await closeDb(); });
+
+  // Every bucket a controller writes to has to exist in the migrations. Two of
+  // them did not for months: payment-docs and sks-payment-files were created
+  // by hand in the Supabase dashboard, so a database rebuilt from this repo
+  // had neither and every proof, invoice and slip upload failed. Migration 031
+  // records all three; this stops the next one being added by hand.
+  const REQUIRED = ['payment-docs', 'salut-proofs', 'sks-payment-files'];
+
+  test('every bucket the app uploads to exists', async () => {
+    const rows = await sql`SELECT id FROM storage.buckets`;
+    const present = rows.map(r => r.id);
+
+    for (const bucket of REQUIRED) {
+      assert.ok(present.includes(bucket), `missing storage bucket: ${bucket}`);
+    }
+  });
+
+  test('none of them is public', async () => {
+    // They hold bank transfer proofs and payment slips. The controllers hand
+    // out 5-minute signed URLs; a public bucket would make every object
+    // readable by anyone who guessed the path.
+    const rows = await sql`
+      SELECT id, public FROM storage.buckets WHERE id = ANY(${REQUIRED})`;
+
+    for (const row of rows) {
+      assert.equal(row.public, false, `${row.id} must not be public`);
+    }
+  });
+});
