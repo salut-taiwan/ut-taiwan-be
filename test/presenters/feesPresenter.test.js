@@ -41,30 +41,30 @@ describe('presentFees', () => {
   test('adds NTD display strings for salutMembership new/returning', () => {
     const out = presentFees(makeRawFees());
     assert.equal(out.salutMembership.new_display, 'NT$ 1,700');
-    assert.equal(out.salutMembership.returning_display, 'NT$ 1,200');
+    assert.equal(out.salutMembership.returning_display, 'NT$ 1,700');
   });
 
-  test('adds IDR equivalents — the amount actually transferred over QRIS', () => {
+  test('omits IDR amounts for the NTD bank transfer', () => {
     const out = presentFees(makeRawFees());
-    assert.equal(out.salutMembership.new_display_idr, `Rp${NBSP}952.000`);
-    assert.equal(out.salutMembership.returning_display_idr, `Rp${NBSP}672.000`);
+    assert.equal(out.salutMembership.new_display_idr, null);
+    assert.equal(out.salutMembership.returning_display_idr, null);
     assert.equal(
       out.salutMembership.tier_combined_display_idr,
-      `Rp${NBSP}952.000 (semester 1) atau Rp${NBSP}672.000 (semester 2+)`
+      null
     );
   });
 
   test('adds tier labels', () => {
     const out = presentFees(makeRawFees());
-    assert.equal(out.salutMembership.new_label, 'NT$ 1,700 (semester 1)');
-    assert.equal(out.salutMembership.returning_label, 'NT$ 1,200 (semester 2+)');
+    assert.equal(out.salutMembership.new_label, 'NT$ 1,700 sekali selama masa perkuliahan');
+    assert.equal(out.salutMembership.returning_label, 'NT$ 1,700 sekali selama masa perkuliahan');
   });
 
   test('adds tier_combined_display matching frontend salut/page.tsx:18-20 format', () => {
     const out = presentFees(makeRawFees());
     assert.equal(
       out.salutMembership.tier_combined_display,
-      'NT$ 1,700 (semester 1) atau NT$ 1,200 (semester 2+)'
+      'NT$ 1,700 sekali selama masa perkuliahan'
     );
   });
 
@@ -84,7 +84,7 @@ describe('presentFees', () => {
     const raw = makeRawFees();
     const out = presentFees(raw);
     assert.equal(out.salutMembership.new, 1700);
-    assert.equal(out.salutMembership.returning, 1200);
+    assert.equal(out.salutMembership.returning, 1700);
     assert.equal(out.serviceFees[0].amount, SALUT_FEES.ONGKIR);
     assert.equal(out.totalServiceFees, SALUT_FEES.ONGKIR + SALUT_FEES.BOX + SALUT_FEES.ADMIN);
   });

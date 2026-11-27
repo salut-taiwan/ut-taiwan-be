@@ -233,7 +233,7 @@ describe('POST /api/auth/login', () => {
     setup({ signInResult: { data: {}, error: { message: 'Invalid login credentials' } } });
     const res = await post('/api/auth/login', { email: 'a@b.c', password: 'wrong' });
     assert.equal(res.status, 401);
-    assert.equal(res.body.error, 'Email atau password salah');
+    assert.equal(res.body.error, 'Email/NIM atau kata sandi salah');
     assert.equal(res.body.code, undefined);
   });
 });
@@ -267,7 +267,7 @@ describe('GET and PUT /api/auth/me', () => {
     assert.equal(res.body.code, 'PROFILE_MISSING');
   });
 
-  test('a lapsed membership reads as expired without the client doing date maths', async () => {
+  test('an older approval remains active during the period of study', async () => {
     setup({
       profile: {
         id: AUTH_ID, email: 'a@b.c', name: 'Budi',
@@ -275,8 +275,8 @@ describe('GET and PUT /api/auth/me', () => {
       },
     });
     const res = await authed('get');
-    assert.equal(res.body.salut_status, 'expired');
-    assert.equal(res.body.is_salut_active, false);
+    assert.equal(res.body.salut_status, 'approved');
+    assert.equal(res.body.is_salut_active, true);
   });
 
   test('a current membership is reported as approved and active', async () => {

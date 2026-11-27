@@ -246,15 +246,15 @@ describe('checkout — SALUT fee waiver', () => {
     assert.equal(p.p_total_amount, 100000);
   });
 
-  test('a lapsed membership does not waive — the flag alone is not enough', async () => {
+  test('a verified older contribution still waives eligible service fees', async () => {
     // is_salut can stay true after a cycle rolls over; only the approval date
     // decides. This is the whole point of the lazy-expiry rule.
     const h = setup({
       user: { is_salut: true, salut_approved_at: '2020-01-01T00:00:00Z', current_semester: 3 },
     });
     await post();
-    assert.equal(rpcParams(h).p_is_salut_order, false);
-    assert.equal(rpcParams(h).p_shipping_cost, SALUT_FEES.ONGKIR);
+    assert.equal(rpcParams(h).p_is_salut_order, true);
+    assert.equal(rpcParams(h).p_shipping_cost, 0);
   });
 
   test('a recent approval without the flag does not waive either', async () => {

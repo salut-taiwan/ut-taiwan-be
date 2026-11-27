@@ -10,7 +10,7 @@
 
 const { Resend } = require('resend');
 const env = require('../config/env');
-const { formatIDR, formatPriceOrFree, formatDate, formatExpiryDate } = require('../format');
+const { formatIDR, formatPriceOrFree, formatDate } = require('../format');
 
 // Constructed on first send, not at require time. The Resend constructor
 // throws when the key is missing, which used to take the whole process down at
@@ -184,10 +184,8 @@ const templates = {
     };
   },
 
-  salutApproved({ name, expiresAt }) {
-    const expiryLine = expiresAt
-      ? `<p style="margin:8px 0 0 0;color:#047857;font-size:13px;">Keanggotaan berlaku hingga <strong>${formatExpiryDate(expiresAt)}</strong> (Asia/Taipei). Perpanjangan wajib dilakukan setiap semester (1 Mei dan 1 November).</p>`
-      : '';
+  salutApproved({ name }) {
+    const expiryLine = '<p style="margin:8px 0 0;color:#047857;font-size:13px;">Kontribusi dibayarkan satu kali selama masa perkuliahan. Tidak ada pembayaran ulang setiap semester.</p>';
     return {
       subject: 'Keanggotaan SALUT Anda telah disetujui',
       html: `

@@ -29,6 +29,7 @@ const env = {
 
   // Frontend
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
+  FRONTEND_PREVIEW_URL: process.env.FRONTEND_PREVIEW_URL || '',
 
   // Email (Resend)
   RESEND_API_KEY: process.env.RESEND_API_KEY,

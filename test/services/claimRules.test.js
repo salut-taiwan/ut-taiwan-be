@@ -43,11 +43,10 @@ describe('checkSalutSem1Eligibility', () => {
     assert.match(res.error, /anggota SALUT aktif/);
   });
 
-  test('a membership that lapsed at the last cycle boundary is refused', async () => {
+  test('an old approved contribution remains eligible when the free item is unclaimed', async () => {
     setup({ user: { current_semester: 1, salut_approved_at: '2020-01-01T00:00:00Z' } });
     const res = await checkSalutSem1Eligibility('u-1', PRODUCT_ID);
-    assert.equal(res.status, 403);
-    assert.match(res.error, /anggota SALUT aktif/);
+    assert.equal(res.ok, true);
   });
 
   test('a missing user row is treated as a non-member', async () => {

@@ -1,95 +1,16 @@
 'use strict';
-
-const { test, describe } = require('node:test');
+const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const C = require('../../config/constants');
+const { presentFees } = require('../../presenters/feesPresenter');
+const { presentSalutStatus } = require('../../presenters/salutPresenter');
 
-const {
-  nextSalutExpiry,
-  mostRecentExpiryBefore,
-  isSalutActive,
-  SALUT_MEMBERSHIP,
-} = require('../../config/constants');
+test('every semester and missing semester have the same NTD 1700 fee',()=>{for(const semester of [1,2,9,null,undefined]){assert.equal(C.getSalutMembershipFee(semester).amount,1700);assert.equal(C.getSalutMembershipFee(semester).billing,'once_per_study');assert.equal(C.getSalutMembershipFee(semester).amount_idr,null);}});
 
-const may1_2026 = new Date('2026-04-30T16:00:00Z'); // = 2026-05-01 00:00 Taipei
-const nov1_2026 = new Date('2026-10-31T16:00:00Z'); // = 2026-11-01 00:00 Taipei
-const may1_2027 = new Date('2027-04-30T16:00:00Z');
+test('approved contribution remains active across May, November and later study years',()=>{for(const date of ['2026-05-01','2026-11-01','2027-05-01','2030-11-01'])assert.equal(C.isSalutActive('2026-01-01',new Date(date)),true);assert.equal(C.nextSalutExpiry(),null);assert.equal(C.mostRecentExpiryBefore(),null);});
 
-describe('SALUT_MEMBERSHIP.EXPIRY_DATES', () => {
-  test('contains May 1 and November 1', () => {
-    assert.deepEqual(SALUT_MEMBERSHIP.EXPIRY_DATES, [
-      { month: 5, day: 1 },
-      { month: 11, day: 1 },
-    ]);
-  });
-});
+test('missing, invalid or future approvals never grant eligibility',()=>{for(const approval of [null,'invalid','2099-01-01'])assert.equal(C.isSalutActive(approval,new Date('2026-11-01')),false);});
 
-describe('nextSalutExpiry', () => {
-  test('between May 1 and Nov 1 → returns Nov 1 of same year', () => {
-    const result = nextSalutExpiry(new Date('2026-06-15T00:00:00Z'));
-    assert.equal(result.toISOString(), nov1_2026.toISOString());
-  });
+test('fees do not quote QRIS/IDR or periodic renewal dates',()=>{const out=presentFees({salutMembership:{new:1700,returning:1700,billing:'once_per_study',renewalPolicy:{}},serviceFees:[],totalServiceFees:0});assert.equal(out.salutMembership.new_display_idr,null);assert.equal(out.salutMembership.returning_display_idr,null);assert.equal(out.salutMembership.renewalPolicy.next_renewal_date_display,null);assert.match(out.salutMembership.tier_combined_display,/sekali selama masa perkuliahan/);});
 
-  test('between Nov 1 and May 1 → returns May 1 of next year', () => {
-    const result = nextSalutExpiry(new Date('2026-12-01T00:00:00Z'));
-    assert.equal(result.toISOString(), may1_2027.toISOString());
-  });
-
-  test('right before May 1 Taipei → returns May 1', () => {
-    const result = nextSalutExpiry(new Date('2026-04-30T15:59:59Z'));
-    assert.equal(result.toISOString(), may1_2026.toISOString());
-  });
-
-  test('right after Nov 1 Taipei → returns next May 1, not same-year Nov 1', () => {
-    // 2026-10-31 20:00 UTC = 2026-11-01 04:00 Taipei, already past the boundary
-    const result = nextSalutExpiry(new Date('2026-10-31T20:00:00Z'));
-    assert.equal(result.toISOString(), may1_2027.toISOString());
-  });
-});
-
-describe('mostRecentExpiryBefore', () => {
-  test('between May 1 and Nov 1 → returns May 1 of same year', () => {
-    const result = mostRecentExpiryBefore(new Date('2026-06-15T00:00:00Z'));
-    assert.equal(result.toISOString(), may1_2026.toISOString());
-  });
-
-  test('between Nov 1 and May 1 → returns Nov 1 of same year', () => {
-    const result = mostRecentExpiryBefore(new Date('2026-12-01T00:00:00Z'));
-    assert.equal(result.toISOString(), nov1_2026.toISOString());
-  });
-
-  test('right before May 1 Taipei → returns previous Nov 1', () => {
-    const result = mostRecentExpiryBefore(new Date('2026-04-30T15:59:59Z'));
-    assert.equal(result.toISOString(), '2025-10-31T16:00:00.000Z');
-  });
-});
-
-describe('isSalutActive', () => {
-  const now = new Date('2026-06-15T00:00:00Z'); // between May 1 and Nov 1 2026
-
-  test('returns false for null approvedAt', () => {
-    assert.equal(isSalutActive(null, now), false);
-  });
-
-  test('approved on Apr 30 2026 (before May 1) → expired', () => {
-    assert.equal(isSalutActive('2026-04-30T00:00:00Z', now), false);
-  });
-
-  test('approved on May 2 2026 (after boundary) → active', () => {
-    assert.equal(isSalutActive('2026-05-02T00:00:00Z', now), true);
-  });
-
-  test('approved on Oct 31 2026 → still active on Oct 31 in Nov 1 cycle', () => {
-    const now2 = new Date('2026-10-31T00:00:00Z');
-    assert.equal(isSalutActive('2026-05-02T00:00:00Z', now2), true);
-  });
-
-  test('approved on Oct 31 2026 → expired after Nov 1 boundary', () => {
-    const now2 = new Date('2026-11-02T00:00:00Z');
-    assert.equal(isSalutActive('2026-05-02T00:00:00Z', now2), false);
-  });
-
-  test('approved on Nov 2 2026 → active across November cycle', () => {
-    const now2 = new Date('2026-12-15T00:00:00Z');
-    assert.equal(isSalutActive('2026-11-02T00:00:00Z', now2), true);
-  });
-});
+test('historical expired records stay marked for review',()=>{assert.equal(presentSalutStatus({salut_status:'expired',is_salut_active:false}).effective_status,'expired');});

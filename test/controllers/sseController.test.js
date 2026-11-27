@@ -80,12 +80,12 @@ describe('opening the stream', () => {
     });
   });
 
-  test('a lapsed membership opens as inactive even though the flag is set', async () => {
+  test('an old approval remains active without a semester reset', async () => {
     const { res } = await openStream(randomUUID(), {
       is_salut: true, salut_status: 'approved', salut_approved_at: '2020-01-01T00:00:00Z',
     });
 
-    assert.equal(frames(res)[0].is_salut_active, false);
+    assert.equal(frames(res)[0].is_salut_active, true);
   });
 
   test('a user with no profile row still gets a usable frame', async () => {

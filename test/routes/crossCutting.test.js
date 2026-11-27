@@ -196,11 +196,12 @@ describe('storage proxy', () => {
 });
 
 describe('public catalog endpoints', () => {
-  test('the fee configuration is public and carries both currencies', async () => {
+  test('the fee configuration quotes the one-time NTD contribution', async () => {
     const res = await req('/api/config/fees');
     assert.equal(res.status, 200);
     assert.ok(res.body.salutMembership.new_display);
-    assert.ok(res.body.salutMembership.new_display_idr);
+    assert.equal(res.body.salutMembership.new_display_idr, null);
+    assert.equal(res.body.salutMembership.billing, 'once_per_study');
   });
 
   test('bank lists are served per currency', async () => {

@@ -2,7 +2,7 @@
 
 const { formatIDR, formatNTD } = require('../format');
 const { formatExpiryDate } = require('../format/datetime');
-const { nextSalutExpiry, RATE_IDR_PER_NTD } = require('../config/constants');
+const { nextSalutExpiry } = require('../config/constants');
 
 function formatIdrPlain(n) {
   return new Intl.NumberFormat('id-ID').format(Number(n));
@@ -14,8 +14,8 @@ function presentFees(dto) {
   // The fee is quoted in NTD but paid in IDR over QRIS, so the IDR figure is the
   // one students actually transfer. Converted here, not on the FE, which never
   // receives the rate.
-  const newIdrDisplay = formatIDR(Number(dto.salutMembership.new) * RATE_IDR_PER_NTD);
-  const returningIdrDisplay = formatIDR(Number(dto.salutMembership.returning) * RATE_IDR_PER_NTD);
+  const newIdrDisplay = null;
+  const returningIdrDisplay = null;
   const nextRenewal = nextSalutExpiry();
   const presented = {
     ...dto,
@@ -25,10 +25,10 @@ function presentFees(dto) {
       returning_display: returningDisplay,
       new_display_idr: newIdrDisplay,
       returning_display_idr: returningIdrDisplay,
-      new_label: `${newDisplay} (semester 1)`,
-      returning_label: `${returningDisplay} (semester 2+)`,
-      tier_combined_display: `${newDisplay} (semester 1) atau ${returningDisplay} (semester 2+)`,
-      tier_combined_display_idr: `${newIdrDisplay} (semester 1) atau ${returningIdrDisplay} (semester 2+)`,
+      new_label: `${newDisplay} sekali selama masa perkuliahan`,
+      returning_label: `${returningDisplay} sekali selama masa perkuliahan`,
+      tier_combined_display: `${newDisplay} sekali selama masa perkuliahan`,
+      tier_combined_display_idr: null,
       renewalPolicy: {
         ...dto.salutMembership.renewalPolicy,
         next_renewal_date_display: nextRenewal ? formatExpiryDate(nextRenewal.toISOString()) : null,
