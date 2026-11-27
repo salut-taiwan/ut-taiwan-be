@@ -20,23 +20,23 @@ describe('getSalutMembershipFee', () => {
     assert.equal(fee.tier, 'new');
   });
 
-  test('semesters 2 through 9 pay the returning tier', () => {
+  test('semesters 2 through 9 pay the same one-time amount', () => {
     for (let sem = 2; sem <= 9; sem++) {
       const fee = getSalutMembershipFee(sem);
-      assert.equal(fee.amount, 1200, `semester ${sem}`);
+      assert.equal(fee.amount, 1700, `semester ${sem}`);
       assert.equal(fee.tier, 'returning', `semester ${sem}`);
     }
   });
 
-  test('the IDR figure is what students actually transfer over QRIS', () => {
-    assert.equal(getSalutMembershipFee(1).amount_idr, 952000);
-    assert.equal(getSalutMembershipFee(3).amount_idr, 672000);
+  test('SALUT transfers are denominated in NTD', () => {
+    assert.equal(getSalutMembershipFee(1).amount_idr, null);
+    assert.equal(getSalutMembershipFee(3).amount_idr, null);
   });
 
-  test('the IDR figure is always the NTD amount at the published rate', () => {
+  test('SALUT contributions do not quote IDR', () => {
     for (const sem of [1, 5]) {
       const fee = getSalutMembershipFee(sem);
-      assert.equal(fee.amount_idr, fee.amount * RATE_IDR_PER_NTD);
+      assert.equal(fee.amount_idr, null);
     }
   });
 

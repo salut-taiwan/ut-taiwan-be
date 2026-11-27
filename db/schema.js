@@ -128,6 +128,8 @@ const users = pgTable('users', {
   name:             text('name').notNull(),
   nim:              varchar('nim', { length: 20 }),
   phone:            text('phone'),
+  phone_taiwan:     varchar('phone_taiwan', { length: 16 }),
+  almamater_size:   varchar('almamater_size', { length: 30 }),
   program_id:       uuid('program_id').references(() => programs.id, { onDelete: 'set null' }),
   current_semester: integer('current_semester'),                        // 1–9
   shipping_address: text('shipping_address'),
@@ -161,6 +163,7 @@ const users = pgTable('users', {
   salut_approved_at:         tsz('salut_approved_at'),
   salut_applied_fee_amount:  money('salut_applied_fee_amount'),
   salut_applied_semester:    integer('salut_applied_semester'),
+  salut_payment_note:        text('salut_payment_note'),
   salut_wa_number:           text('salut_wa_number'),                          // migration 029
   created_at: tsz('created_at').defaultNow(),
   updated_at: tsz('updated_at').defaultNow(),

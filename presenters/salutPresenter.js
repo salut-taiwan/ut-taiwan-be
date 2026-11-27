@@ -1,6 +1,6 @@
 'use strict';
 
-const { formatNTD, formatIDR, formatDate } = require('../format');
+const { formatNTD, formatDate } = require('../format');
 const { getSalutMembershipFee } = require('../config/constants');
 
 function feeAmountDisplay(value) {
@@ -10,19 +10,14 @@ function feeAmountDisplay(value) {
 }
 
 function buildApplicableFee(currentSemester) {
-  if (!Number.isInteger(currentSemester) || currentSemester < 1 || currentSemester > 9) {
-    return null;
-  }
   const fee = getSalutMembershipFee(currentSemester);
   const amountDisplay = formatNTD(fee.amount);
   return {
     ...fee,
     amount_display: amountDisplay,
     // What the student actually transfers over QRIS.
-    amount_idr_display: formatIDR(fee.amount_idr),
-    tier_label: fee.tier === 'new'
-      ? 'Mahasiswa baru (Semester 1)'
-      : 'Mahasiswa lama (Semester 2+)',
+    amount_idr_display: null,
+    tier_label: 'Mahasiswa UT Taiwan — sekali selama masa perkuliahan',
   };
 }
 

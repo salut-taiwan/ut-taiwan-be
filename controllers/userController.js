@@ -3,7 +3,6 @@ const { db } = require('../db');
 const { users, programs } = require('../db/schema');
 const { eq, and, ne, or, ilike, inArray, asc, desc, sql } = require('drizzle-orm');
 const emailService = require('../services/emailService');
-const { nextSalutExpiry } = require('../config/constants');
 const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 const { formatDate, formatNTD, normalizeWaNumber } = require('../format');
 
@@ -48,6 +47,7 @@ async function listUsers(req, res) {
         ilike(users.email, term),
         ilike(users.nim, term),
         ilike(users.phone, term),
+        ilike(users.phone_taiwan, term),
         ilike(programs.name, term),
         ilike(programs.code, term),
       ));
@@ -79,6 +79,8 @@ async function listUsers(req, res) {
         name:             users.name,
         nim:              users.nim,
         phone:            users.phone,
+        phone_taiwan:     users.phone_taiwan,
+        almamater_size:   users.almamater_size,
         current_semester: users.current_semester,
         role:             users.role,
         is_verified:      users.is_verified,
@@ -111,6 +113,8 @@ async function listUsers(req, res) {
         name: u.name,
         nim: u.nim,
         phone: u.phone,
+        phone_taiwan: u.phone_taiwan ?? null,
+        almamater_size: u.almamater_size ?? null,
         current_semester: u.current_semester,
         role: u.role,
         is_verified: u.is_verified,
@@ -163,7 +167,7 @@ async function updateUserSalut(req, res) {
       emailService.sendSalutApproved({
         email: data.email,
         name: data.name,
-        expiresAt: nextSalutExpiry(new Date()).toISOString(),
+        expiresAt: null,
       }).catch((err) => console.error('[email] send failed:', err.message));
     }
   } catch (err) {
@@ -209,7 +213,7 @@ async function bulkUpdateUserSalut(req, res) {
     }
 
     if (is_salut) {
-      const expiresAt = nextSalutExpiry(new Date()).toISOString();
+      const expiresAt = null;
       for (const row of rows) {
         emailService.sendSalutApproved({ email: row.email, name: row.name, expiresAt })
           .catch((err) => console.error('[email] send failed:', err.message));
@@ -231,7 +235,7 @@ async function listSalutApplications(req, res) {
       columns: {
         id: true, email: true, name: true, nim: true, current_semester: true, phone: true,
         salut_applied_at: true, salut_payment_proof_url: true,
-        salut_applied_fee_amount: true, salut_applied_semester: true, salut_wa_number: true,
+        salut_applied_fee_amount: true, salut_applied_semester: true, salut_wa_number: true, salut_payment_note: true,
       },
       where: and(...conditions),
       orderBy: asc(users.salut_applied_at),
@@ -303,7 +307,7 @@ async function approveSalutApplication(req, res) {
     emailService.sendSalutApproved({
       email: data.email,
       name: data.name,
-      expiresAt: nextSalutExpiry(approvedAt).toISOString(),
+      expiresAt: null,
     }).catch((err) => console.error('[email] send failed:', err.message));
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -14,7 +14,7 @@ afterEach(() => { harness?.restore(); harness = null; });
 function setup(userRow = { is_salut: false, salut_status: 'none', current_semester: 1, salut_approved_at: null }) {
   harness = stubBackend({
     user: USER,
-    query: { users: { findFirst: async () => userRow } },
+    query: { users: { findFirst: async () => ({ ...userRow, nim: '000000001' }) } },
     update: updateChain([{ id: USER.id }]),
   });
   return harness;
@@ -31,11 +31,11 @@ describe('POST /api/salut/apply — WhatsApp number', () => {
   test('stores the number normalized to wa.me digits, and mirrors it to the profile', async () => {
     const h = setup();
 
-    const res = await apply({ proofUrl: 'u/1/proof.jpg', current_semester: 1, wa_number: '081234567890' });
+    const res = await apply({ proofUrl: USER.id + '/proof.jpg', current_semester: 1, wa_number: '081234567890' });
 
     assert.equal(res.status, 200);
     assert.equal(res.body.fee.amount, 1700);
-    assert.equal(res.body.fee.amount_idr, 952000);
+    assert.equal(res.body.fee.amount_idr, null);
 
     const written = h.calls.set.find(v => v.salut_status === 'pending');
     assert.equal(written.salut_wa_number, '6281234567890');
@@ -46,7 +46,7 @@ describe('POST /api/salut/apply — WhatsApp number', () => {
   test('a missing number is rejected — admins need it to add the member to the group', async () => {
     setup();
 
-    const res = await apply({ proofUrl: 'u/1/proof.jpg', current_semester: 1 });
+    const res = await apply({ proofUrl: USER.id + '/proof.jpg', current_semester: 1 });
 
     assert.equal(res.status, 400);
     assert.equal(res.body.error, 'Nomor WhatsApp aktif wajib diisi dengan benar');
@@ -55,7 +55,7 @@ describe('POST /api/salut/apply — WhatsApp number', () => {
   test('an unusable number is rejected', async () => {
     setup();
 
-    const res = await apply({ proofUrl: 'u/1/proof.jpg', current_semester: 1, wa_number: '0812' });
+    const res = await apply({ proofUrl: USER.id + '/proof.jpg', current_semester: 1, wa_number: '0812' });
 
     assert.equal(res.status, 400);
     assert.equal(res.body.error, 'Nomor WhatsApp aktif wajib diisi dengan benar');
@@ -73,19 +73,19 @@ describe('POST /api/salut/apply — WhatsApp number', () => {
   test('an application already in review is not replaced', async () => {
     setup({ is_salut: false, salut_status: 'pending', current_semester: 1, salut_approved_at: null });
 
-    const res = await apply({ proofUrl: 'u/1/proof.jpg', current_semester: 1, wa_number: '081234567890' });
+    const res = await apply({ proofUrl: USER.id + '/proof.jpg', current_semester: 1, wa_number: '081234567890' });
 
     assert.equal(res.status, 400);
     assert.match(res.body.error, /sedang dalam proses verifikasi/);
   });
 
-  test('semester 2+ applies the returning-member fee', async () => {
+  test('semester 2+ applies the same one-time contribution', async () => {
     setup({ is_salut: false, salut_status: 'none', current_semester: 3, salut_approved_at: null });
 
-    const res = await apply({ proofUrl: 'u/1/proof.jpg', current_semester: 3, wa_number: '+886912345678' });
+    const res = await apply({ proofUrl: USER.id + '/proof.jpg', current_semester: 3, wa_number: '+886912345678' });
 
     assert.equal(res.status, 200);
-    assert.equal(res.body.fee.amount, 1200);
-    assert.equal(res.body.fee.amount_idr, 672000);
+    assert.equal(res.body.fee.amount, 1700);
+    assert.equal(res.body.fee.amount_idr, null);
   });
 });

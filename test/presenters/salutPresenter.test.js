@@ -57,32 +57,32 @@ describe('presentSalutStatus — applicable_fee', () => {
     assert.equal(out.applicable_fee.currency, 'NTD');
     assert.equal(out.applicable_fee.tier, 'new');
     assert.equal(out.applicable_fee.amount_display, 'NT$ 1,700');
-    assert.equal(out.applicable_fee.amount_idr, 952000);
-    assert.equal(out.applicable_fee.amount_idr_display, `Rp 952.000`);
-    assert.equal(out.applicable_fee.tier_label, 'Mahasiswa baru (Semester 1)');
+    assert.equal(out.applicable_fee.amount_idr, null);
+    assert.equal(out.applicable_fee.amount_idr_display, null);
+    assert.equal(out.applicable_fee.tier_label, 'Mahasiswa UT Taiwan — sekali selama masa perkuliahan');
   });
 
-  test('semester=2 -> PRICE_RETURNING (1200 NTD), tier=returning', () => {
+  test('semester=2 -> same contribution (1700 NTD), tier=returning', () => {
     const out = presentSalutStatus({
       salut_status: 'none',
       is_salut_active: false,
       current_semester: 2,
     });
-    assert.equal(out.applicable_fee.amount, 1200);
+    assert.equal(out.applicable_fee.amount, 1700);
     assert.equal(out.applicable_fee.tier, 'returning');
-    assert.equal(out.applicable_fee.amount_display, 'NT$ 1,200');
-    assert.equal(out.applicable_fee.amount_idr, 672000);
-    assert.equal(out.applicable_fee.amount_idr_display, `Rp 672.000`);
-    assert.equal(out.applicable_fee.tier_label, 'Mahasiswa lama (Semester 2+)');
+    assert.equal(out.applicable_fee.amount_display, 'NT$ 1,700');
+    assert.equal(out.applicable_fee.amount_idr, null);
+    assert.equal(out.applicable_fee.amount_idr_display, null);
+    assert.equal(out.applicable_fee.tier_label, 'Mahasiswa UT Taiwan — sekali selama masa perkuliahan');
   });
 
-  test('semester=null -> applicable_fee=null', () => {
+  test('missing semester still quotes the one-time contribution', () => {
     const out = presentSalutStatus({
       salut_status: 'none',
       is_salut_active: false,
       current_semester: null,
     });
-    assert.equal(out.applicable_fee, null);
+    assert.equal(out.applicable_fee.amount, 1700);
   });
 });
 
@@ -141,11 +141,11 @@ describe('presentSalutStatus — applied fee display', () => {
 });
 
 describe('buildApplicableFee', () => {
-  test('returns null for invalid/missing semester', () => {
-    assert.equal(buildApplicableFee(null), null);
-    assert.equal(buildApplicableFee(undefined), null);
-    assert.equal(buildApplicableFee(0), null);
-    assert.equal(buildApplicableFee('abc'), null);
+  test('one-time contribution does not depend on semester metadata', () => {
+    assert.equal(buildApplicableFee(null).amount, 1700);
+    assert.equal(buildApplicableFee(undefined).amount, 1700);
+    assert.equal(buildApplicableFee(0).amount, 1700);
+    assert.equal(buildApplicableFee('abc').amount, 1700);
   });
 
   test('returns fee object for semester 1', () => {
@@ -157,6 +157,6 @@ describe('buildApplicableFee', () => {
   test('returns fee object for semester 3', () => {
     const out = buildApplicableFee(3);
     assert.equal(out.tier, 'returning');
-    assert.equal(out.amount, 1200);
+    assert.equal(out.amount, 1700);
   });
 });

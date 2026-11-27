@@ -1,62 +1,36 @@
+// SALUT contribution: one verified payment during the student's period of study.
+// Existing admin revocation remains the way to end eligibility; no date-based reset.
 const SALUT_MEMBERSHIP = {
   CURRENCY: 'NTD',
   PRICE_NEW: 1700,
-  PRICE_RETURNING: 1200,
-  EXPIRY_MONTH: 5, // May (primary reset, kept for back-compat in payloads)
-  EXPIRY_DAY: 1,   // 1st
-  EXPIRY_DATES: [
-    { month: 5, day: 1 },  // May 1
-    { month: 11, day: 1 }, // November 1
-  ],
+  PRICE_RETURNING: 1700,
+  BILLING: 'once_per_study',
+  EXPIRY_MONTH: null,
+  EXPIRY_DAY: null,
+  EXPIRY_DATES: [],
   EXPIRY_TIMEZONE: 'Asia/Taipei',
-  RENEWAL_NOTICE: 'Keanggotaan SALUT berakhir setiap 1 Mei dan 1 November pukul 00:00 (Asia/Taipei). Perpanjangan wajib dilakukan setiap semester.',
+  RENEWAL_NOTICE: 'Kontribusi NTD 1.700 dibayarkan satu kali selama masa perkuliahan, tanpa pembayaran ulang setiap semester.',
 };
 
-// Convert a boundary date (year/month/day, 00:00 Asia/Taipei) to UTC.
-// Taipei is UTC+8 with no DST, so 00:00 Taipei = (previous day) 16:00 UTC.
-function boundaryUTC(year, month, day) {
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - 8 * 60 * 60 * 1000);
-}
-
 function getSalutMembershipFee(currentSemester) {
-  const isNew = currentSemester === 1;
-  const amount = isNew ? SALUT_MEMBERSHIP.PRICE_NEW : SALUT_MEMBERSHIP.PRICE_RETURNING;
   return {
-    amount,
+    amount: SALUT_MEMBERSHIP.PRICE_NEW,
     currency: SALUT_MEMBERSHIP.CURRENCY,
-    tier: isNew ? 'new' : 'returning',
-    amount_idr: amount * RATE_IDR_PER_NTD,
+    // Retain the legacy enum for older API consumers; both tiers have the same fee.
+    tier: currentSemester === 1 ? 'new' : 'returning',
+    billing: SALUT_MEMBERSHIP.BILLING,
+    amount_idr: null,
   };
 }
 
-function allBoundariesAround(year) {
-  const years = [year - 1, year, year + 1];
-  const boundaries = [];
-  for (const y of years) {
-    for (const { month, day } of SALUT_MEMBERSHIP.EXPIRY_DATES) {
-      boundaries.push(boundaryUTC(y, month, day));
-    }
-  }
-  return boundaries.sort((a, b) => a - b);
-}
-
-function nextSalutExpiry(fromDate = new Date()) {
-  const boundaries = allBoundariesAround(fromDate.getUTCFullYear());
-  return boundaries.find((b) => b > fromDate);
-}
-
-function mostRecentExpiryBefore(now = new Date()) {
-  const boundaries = allBoundariesAround(now.getUTCFullYear());
-  let latest = null;
-  for (const b of boundaries) {
-    if (b <= now) latest = b;
-  }
-  return latest;
-}
-
+// Compatibility functions: no periodic expiry exists under once-per-study billing.
+function nextSalutExpiry() { return null; }
+function mostRecentExpiryBefore() { return null; }
 function isSalutActive(approvedAt, now = new Date()) {
   if (!approvedAt) return false;
-  return new Date(approvedAt) >= mostRecentExpiryBefore(now);
+  const approved = new Date(approvedAt).getTime();
+  const current = new Date(now).getTime();
+  return Number.isFinite(approved) && Number.isFinite(current) && approved <= current;
 }
 
 // One published NTD→IDR rate for the whole site: SKS payment quotes, and the

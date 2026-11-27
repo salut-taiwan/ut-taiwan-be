@@ -52,3 +52,5 @@
 029_salut_wa_number.sql
 030_drop_stale_checkout_overloads.sql
 031_storage_buckets.sql
+032_salut_payment_note.sql
+033_registration_profile_fields.sql

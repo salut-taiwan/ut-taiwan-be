@@ -1,12 +1,11 @@
 const { supabaseAdmin } = require('../config/supabase');
 const { db } = require('../db');
 const { users } = require('../db/schema');
-const { eq } = require('drizzle-orm');
+const { eq, and, ne } = require('drizzle-orm');
 const { v4: uuid } = require('uuid');
 const {
   SALUT_MEMBERSHIP,
   getSalutMembershipFee,
-  nextSalutExpiry,
   isSalutActive,
 } = require('../config/constants');
 const { presentSalutStatus } = require('../presenters/salutPresenter');
@@ -16,6 +15,8 @@ const { emitUserStatusUpdate } = require('../services/userStatusEventBus');
 const { validateUpload, extFromMime } = require('../utils/validateUpload');
 
 const RENEWAL_POLICY_PAYLOAD = {
+  billing: SALUT_MEMBERSHIP.BILLING,
+  required: false,
   resetMonth: SALUT_MEMBERSHIP.EXPIRY_MONTH,
   resetDay: SALUT_MEMBERSHIP.EXPIRY_DAY,
   resetDates: SALUT_MEMBERSHIP.EXPIRY_DATES,
@@ -43,9 +44,16 @@ async function uploadProof(req, res) {
 }
 
 async function applyForMembership(req, res) {
-  const { proofUrl, current_semester: bodySemester, wa_number: bodyWaNumber } = req.body;
+  const { proofUrl, current_semester: bodySemester, wa_number: bodyWaNumber, note } = req.body;
   if (!proofUrl || typeof proofUrl !== 'string' || !proofUrl.trim()) {
     return res.status(400).json({ error: 'URL bukti pembayaran wajib diisi' });
+  }
+
+  if (!proofUrl.trim().startsWith(req.user.id + '/')) {
+    return res.status(400).json({ error: 'Bukti pembayaran harus berasal dari unggahan akun Anda sendiri' });
+  }
+  if (note !== undefined && (typeof note !== 'string' || note.length > 1000)) {
+    return res.status(400).json({ error: 'Keterangan maksimal 1000 karakter' });
   }
 
   // Required: without it an approved member can't be added to the SALUT group.
@@ -62,7 +70,7 @@ async function applyForMembership(req, res) {
 
   try {
     const user = await db.query.users.findFirst({
-      columns: { is_salut: true, salut_status: true, current_semester: true, salut_approved_at: true },
+      columns: { is_salut: true, salut_status: true, current_semester: true, salut_approved_at: true, nim: true },
       where: eq(users.id, req.user.id),
     });
 
@@ -76,36 +84,43 @@ async function applyForMembership(req, res) {
     if (user.salut_status === 'pending') {
       return res.status(400).json({ error: 'Permohonan Anda sedang dalam proses verifikasi' });
     }
-    // 'none', 'rejected', 'expired', and stale 'approved' (past cycle) are all eligible to apply.
+    // Migration 022 cleared approval timestamps. An expired historical record
+    // must be verified by an admin; do not ask that student to pay again.
+    if (user.salut_status === 'expired' || user.salut_status === 'approved') {
+      return res.status(409).json({ error: 'Catatan pembayaran lama perlu diperiksa bendahara sebelum pembayaran baru', code: 'HISTORICAL_PAYMENT_REVIEW_REQUIRED' });
+    }
+    if (!user.nim) return res.status(400).json({ error: 'Lengkapi NIM pada profil mahasiswa' });
 
     const resolvedSemester = bodySemester ?? user.current_semester;
-    if (!Number.isInteger(resolvedSemester) || resolvedSemester < 1 || resolvedSemester > 9) {
-      return res.status(400).json({ error: 'Semester saat ini wajib diisi (1-9)' });
-    }
+    // Semester is optional metadata; it never changes the contribution amount.
+    const snapshotSemester = Number.isInteger(resolvedSemester) && resolvedSemester >= 1 && resolvedSemester <= 9 ? resolvedSemester : null;
 
     const fee = getSalutMembershipFee(resolvedSemester);
 
-    await db.update(users)
+    const saved = await db.update(users)
       .set({
         salut_status: 'pending',
         salut_applied_at: new Date(),
         salut_payment_proof_url: proofUrl.trim(),
         salut_rejection_reason: null,
-        current_semester: resolvedSemester,
+        current_semester: snapshotSemester,
         salut_applied_fee_amount: fee.amount,
-        salut_applied_semester: resolvedSemester,
+        salut_applied_semester: snapshotSemester,
+        salut_payment_note: (note || '').trim(),
         salut_wa_number: waNumber,
         // The number they're reachable on today is the better profile phone too.
         phone: waNumber,
       })
-      .where(eq(users.id, req.user.id));
+      .where(and(eq(users.id, req.user.id), ne(users.salut_status, 'pending'), ne(users.salut_status, 'approved'), ne(users.salut_status, 'expired')))
+      .returning({ id: users.id });
+    if (!saved.length) return res.status(409).json({ error: 'Status konfirmasi berubah. Muat ulang halaman sebelum mencoba kembali.' });
 
     emitUserStatusUpdate(req.user.id, { is_salut: false, is_salut_active: false, salut_status: 'pending' });
 
     res.json({
       message: 'Permohonan berhasil dikirim',
       fee,
-      nextExpiry: nextSalutExpiry(new Date()).toISOString(),
+      nextExpiry: null,
       renewalPolicy: RENEWAL_POLICY_PAYLOAD,
     });
   } catch (err) {
@@ -123,6 +138,7 @@ async function getApplicationStatus(req, res) {
         salut_rejection_reason: true,
         salut_approved_at: true,
         salut_applied_fee_amount: true,
+        salut_payment_note: true,
         salut_applied_semester: true,
         current_semester: true,
       },

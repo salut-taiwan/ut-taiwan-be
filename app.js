@@ -36,6 +36,18 @@ const allowedOrigins = new Set(
     })
 );
 
+// An optional, exact preview origin supports testing our own frontend branch.
+// No wildcard Vercel domains are trusted, and production behavior is unchanged
+// until this explicit URL is configured on the backend service.
+if (env.FRONTEND_PREVIEW_URL) {
+  try {
+    const preview = new URL(env.FRONTEND_PREVIEW_URL);
+    if (preview.protocol === 'https:') allowedOrigins.add(preview.origin);
+  } catch {
+    // Invalid preview configuration never broadens the origin allow-list.
+  }
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (curl, Postman, server-to-server)

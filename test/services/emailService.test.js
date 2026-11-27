@@ -117,13 +117,14 @@ describe('templates.orderCancelled', () => {
 });
 
 describe('templates.salutApproved', () => {
-  test('with expiresAt renders Taipei-zoned date-only line', () => {
+  test('legacy expiresAt no longer introduces semester renewal', () => {
     const { subject, html } = templates.salutApproved({
       name: 'G',
       expiresAt: '2027-05-01T00:00:00+08:00',
     });
     assert.equal(subject, 'Keanggotaan SALUT Anda telah disetujui');
-    assert.ok(html.includes('Keanggotaan berlaku hingga <strong>1 Mei 2027</strong>'));
+    assert.ok(html.includes('Tidak ada pembayaran ulang setiap semester.'));
+    assert.ok(!html.includes('Keanggotaan berlaku hingga'));
   });
 
   test('without expiresAt omits the expiry line', () => {

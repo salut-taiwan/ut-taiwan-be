@@ -6,6 +6,7 @@ const env = require('../config/env');
 const { isSalutActive } = require('./../config/constants');
 const { presentUser } = require('../presenters/userPresenter');
 const { getBankName } = require('../config/banks');
+const { validateRegistrationProfile } = require('../utils/registrationProfile');
 
 function buildProfileInsert(userId, body) {
   const {
@@ -16,6 +17,8 @@ function buildProfileInsert(userId, body) {
   } = body;
   return {
     id: userId, email, name, nim, phone,
+    phone_taiwan: body.phone_taiwan || null,
+    almamater_size: body.almamater_size || null,
     birth_place: birth_place || null,
     birth_date: birth_date || null,
     program_id,
@@ -49,6 +52,10 @@ async function register(req, res) {
   if (!Number.isInteger(current_semester) || current_semester < 1 || current_semester > 9) {
     return res.status(400).json({ error: 'Semester saat ini wajib diisi (1-9)' });
   }
+
+  const registrationProfile = validateRegistrationProfile(req.body);
+  if (registrationProfile.error) return res.status(400).json({ error: registrationProfile.error });
+  Object.assign(req.body, registrationProfile.values);
 
   const ntdComplete = bank_ntd_code && bank_ntd_account;
   const idrComplete = bank_idr_name && bank_idr_account;
@@ -106,9 +113,22 @@ async function register(req, res) {
 }
 
 async function login(req, res) {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email dan password wajib diisi' });
+  const { email: suppliedIdentifier, password } = req.body;
+  if (typeof suppliedIdentifier !== 'string' || !suppliedIdentifier.trim() || typeof password !== 'string' || !password) {
+    return res.status(400).json({ error: 'Email atau NIM dan kata sandi wajib diisi' });
+  }
+  const identifier = suppliedIdentifier.trim();
+  let email = identifier;
+  if (!identifier.includes('@')) {
+    if (!/^[a-zA-Z0-9]{1,20}$/.test(identifier)) return res.status(401).json({ error: 'Email/NIM atau kata sandi salah' });
+    try {
+      const matches = await db.query.users.findMany({ columns: { email: true }, where: eq(users.nim, identifier), limit: 2 });
+      // NIM is not unique in the historical schema. Ambiguous records must use email.
+      if (matches.length !== 1) return res.status(401).json({ error: 'Email/NIM atau kata sandi salah. Coba gunakan email terdaftar.' });
+      email = matches[0].email;
+    } catch {
+      return res.status(503).json({ error: 'Layanan login belum tersedia. Coba lagi nanti.' });
+    }
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -116,7 +136,7 @@ async function login(req, res) {
     if (error.message === 'Email not confirmed') {
       return res.status(401).json({ error: 'Email belum diverifikasi. Cek inbox atau folder spam Anda.', code: 'EMAIL_NOT_CONFIRMED' });
     }
-    return res.status(401).json({ error: 'Email atau password salah' });
+    return res.status(401).json({ error: 'Email/NIM atau kata sandi salah' });
   }
 
   res.json({
@@ -158,7 +178,7 @@ async function getMe(req, res) {
 }
 
 async function updateMe(req, res) {
-  const allowedFields = ['name', 'nim', 'phone', 'program_id', 'current_semester',
+  const allowedFields = ['name', 'nim', 'phone', 'phone_taiwan', 'almamater_size', 'program_id', 'current_semester',
     'shipping_address', 'city', 'province', 'postal_code', 'country',
     'bank_ntd_code', 'bank_ntd_name', 'bank_ntd_account',
     'bank_idr_name', 'bank_idr_account',
@@ -169,6 +189,9 @@ async function updateMe(req, res) {
   for (const field of allowedFields) {
     if (req.body[field] !== undefined) updates[field] = req.body[field];
   }
+  const registrationProfile = validateRegistrationProfile(req.body, { update: true });
+  if (registrationProfile.error) return res.status(400).json({ error: registrationProfile.error });
+  Object.assign(updates, registrationProfile.values);
   // Validate bank codes/names against canonical list
   if (updates.bank_ntd_code) {
     const resolved = getBankName(updates.bank_ntd_code, 'NTD');

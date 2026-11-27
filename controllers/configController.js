@@ -8,7 +8,9 @@ function getFees(req, res) {
       currency: SALUT_MEMBERSHIP.CURRENCY,
       new: SALUT_MEMBERSHIP.PRICE_NEW,
       returning: SALUT_MEMBERSHIP.PRICE_RETURNING,
-      rule: 'new = current_semester === 1',
+      rule: 'one verified NTD 1700 contribution during the period of study',
+      billing: SALUT_MEMBERSHIP.BILLING,
+      payment_bank: { bank: 'PostBank', holder: 'Vira', account: '700-00011311204391', currency: 'NTD' },
       renewalPolicy: {
         resetMonth: SALUT_MEMBERSHIP.EXPIRY_MONTH,
         resetDay: SALUT_MEMBERSHIP.EXPIRY_DAY,
@@ -64,4 +66,12 @@ function getChatWidget(req, res) {
   });
 }
 
-module.exports = { getFees, getBanks, getChatWidget };
+function getRegistration(req, res) {
+  res.json({
+    profile_fields_version: 1,
+    required_fields: ['phone_taiwan', 'almamater_size'],
+    almamater_size_max_length: 30,
+  });
+}
+
+module.exports = { getFees, getBanks, getChatWidget, getRegistration };

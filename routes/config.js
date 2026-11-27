@@ -3,6 +3,7 @@ const router = express.Router();
 const ctrl = require('../controllers/configController');
 
 router.get('/fees', ctrl.getFees);
+router.get('/registration', ctrl.getRegistration);
 router.get('/banks', ctrl.getBanks);
 router.get('/chat-widget', ctrl.getChatWidget);
 

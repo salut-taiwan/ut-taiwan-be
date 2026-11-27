@@ -170,7 +170,7 @@ describe('PATCH /api/users/admin/salut/bulk', () => {
     assert.deepEqual(sent.map(p => p.email).sort(), ['dua@example.com', 'satu@example.com']);
   });
 
-  test('the batch notice carries the same expiry the single approval does', async () => {
+  test('the batch notice does not set a periodic expiry', async () => {
     const h = setup({
       update: updateChain([{ id: 'u-1', email: 'satu@example.com', name: 'Satu' }]),
     });
@@ -179,8 +179,7 @@ describe('PATCH /api/users/admin/salut/bulk', () => {
       .send({ userIds: ['u-1'], is_salut: true });
 
     const payload = await h.email.next('sendSalutApproved');
-    assert.ok(payload.expiresAt, 'the member needs to know when it lapses');
-    assert.ok(!Number.isNaN(Date.parse(payload.expiresAt)));
+    assert.equal(payload.expiresAt, null);
   });
 
   test('revoking membership in bulk emails nobody', async () => {
@@ -265,12 +264,12 @@ describe('PATCH /api/users/admin/:userId/salut/approve', () => {
     assert.ok(written.salut_approved_at instanceof Date);
   });
 
-  test('the new member is emailed with their expiry date', async () => {
+  test('the new member is emailed without a periodic expiry', async () => {
     const h = setup({ target: { salut_status: 'pending' } });
     await authed('patch', `/api/users/admin/${TARGET}/salut/approve`);
     const payload = await h.email.next('sendSalutApproved');
     assert.equal(payload.email, 'budi@example.com');
-    assert.ok(payload.expiresAt);
+    assert.equal(payload.expiresAt, null);
   });
 });
 
